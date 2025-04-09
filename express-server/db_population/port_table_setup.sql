@@ -1,0 +1,7 @@
+CREATE TABLE Portfolios (
+  port_id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL,
+  port_name TEXT NOT NULL,
+  cash_dep NUMERIC(12,2) NOT NULL,
+  reg_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
