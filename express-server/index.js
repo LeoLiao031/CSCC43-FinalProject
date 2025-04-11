@@ -115,15 +115,15 @@ app.get("/portfolios/:username", async (req, res) => {
 });
 
 // Get portfolio info
-app.get("/portfolios/:port_name/:owner", async (req, res) => {
-  const { port_name, owner } = req.params;
+app.get("/portfolios/:port_id/:owner", async (req, res) => {
+  const { port_id, owner } = req.params;
   try {
     const result = await pool.query(
       `SELECT *
        FROM Portfolios
-       WHERE port_name = $1 AND username = $2
+       WHERE port_id = $1 AND username = $2
        LIMIT 1`,
-      [port_name, owner]
+      [port_id, owner]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Portfolio not found" });
@@ -214,28 +214,135 @@ app.put("/portfolios/transfer", async (req, res) => {
 
 // -- Stock management --
 
-// Get stockholdings associated with a portfolio
-// app.post("/portfolios/:port_name/:owner", async (req, res) => {
-//   const { port_name, owner } = req.params;
-//   const { stocks } = req.body;
-//   try {
-//     const result = await pool.query(
-//       `SELECT stock_symbol, shares
-//        FROM Stockholdings
-//        WHERE port_name = $1 AND username = $2 AND stock_symbol = $3`,
-//       [port_name, owner, stocks]
-//     );
-//     if (result.rows.length === 0) {
-//       return res.status(404).json({ error: "No stockholdings found for this portfolio and stock" });
-//     }
-//     res.json(result.rows);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Failed to fetch stockholdings" });
-//   }
-// });
+// Buy a stock for a portfolio
+app.post("/portfolios/stocks/buy", async (req, res) => {
+  const { port_id, stock_symbol, amount } = req.body;
 
-// TODO: Implement the remaining stock management routes (Figure out recent prices, predicitions)
+  try {
+    // Get the close price of the stock
+    const priceResult = await pool.query(
+      `SELECT close_price
+       FROM StockHistory
+       WHERE stock_symbol = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [stock_symbol]
+    );
+
+    if (priceResult.rows.length === 0) {
+      return res.status(404).json({ error: "Stock price not found" });
+    }
+
+    const close_price = priceResult.rows[0].close_price;
+    const total_cost = close_price * amount;
+
+    // Check if the portfolio has enough cash
+    const portfolioResult = await pool.query(
+      `SELECT cash_dep
+       FROM Portfolios
+       WHERE port_id = $1`,
+      [port_id]
+    );
+
+    if (portfolioResult.rows.length === 0) {
+      return res.status(404).json({ error: "Portfolio not found" });
+    }
+
+    const cash_dep = portfolioResult.rows[0].cash_dep;
+
+    if (cash_dep < total_cost) {
+      return res.status(400).json({ error: "Insufficient cash in portfolio" });
+    }
+
+    // Deduct the total cost from the portfolio's cash
+    await pool.query(
+      `UPDATE Portfolios
+       SET cash_dep = cash_dep - $1
+       WHERE port_id = $2`,
+      [total_cost, port_id]
+    );
+
+    // Add the stock to the portfolio or update the quantity
+    const result = await pool.query(
+      `INSERT INTO Stockholdings (port_id, stock_symbol, quantity)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (port_id, stock_symbol)
+       DO UPDATE SET quantity = Stockholdings.quantity + $3
+       RETURNING port_id, stock_symbol, quantity`,
+      [port_id, stock_symbol, amount]
+    );
+
+    res.json({
+      message: "Stock purchased successfully",
+      stock: result.rows[0],
+      total_cost,
+      remaining_cash: cash_dep - total_cost,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Stock purchase failed" });
+  }
+});
+
+// Sell a stock from a portfolio
+app.delete("/portfolios/stocks/sell", async (req, res) => {
+  const { port_id, stock_symbol, amount } = req.body;
+
+  try {
+    // Get the close price of the stock
+    const priceResult = await pool.query(
+      `SELECT close_price
+       FROM StockHistory
+       WHERE stock_symbol = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [stock_symbol]
+    );
+
+    if (priceResult.rows.length === 0) {
+      return res.status(404).json({ error: "Stock price not found" });
+    }
+
+    const close_price = priceResult.rows[0].close_price;
+    const total_revenue = close_price * amount;
+
+    // Update the stock quantity in the portfolio
+    const result = await pool.query(
+      `UPDATE Stockholdings
+       SET quantity = quantity - $1
+       WHERE port_id = $2 AND stock_symbol = $3
+       RETURNING port_id, stock_symbol, quantity`,
+      [amount, port_id, stock_symbol]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Stock not found in portfolio" });
+    }
+
+    if (result.rows[0].quantity < 0) {
+      return res.status(400).json({ error: "Insufficient stock quantity" });
+    }
+
+    // Add the total revenue to the portfolio's cash
+    await pool.query(
+      `UPDATE Portfolios
+       SET cash_dep = cash_dep + $1
+       WHERE port_id = $2`,
+      [total_revenue, port_id]
+    );
+
+    res.json({
+      message: "Stock sold successfully",
+      stock: result.rows[0],
+      total_revenue,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Stock sale failed" });
+  }
+});
+
+// TODO: Implement the remaining stock management routes (Figure out recent prices, predictions)
 
 // -- Friends management --
 
