@@ -1,16 +1,42 @@
 "use client";
 import { Box, Tabs, Tab } from "@mui/material";
 import { useState } from "react";
+import AccountTab from "./components/AccountTab";
+import PortfolioTab from "./components/PortfolioTab";
 
-interface HomeProps {
-  children?: React.ReactNode;
-}
-
-export default function Home({ children }: HomeProps) {
+export default function Home() {
   const [selectedTab, setSelectedTab] = useState(0);
+  const [loginStatus, setLoginStatus] = useState(false);
+  const [username, setUsername] = useState("");
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setSelectedTab(newValue);
+  };
+
+  const handleLoginStatusChange = (status: boolean, user?: string) => {
+    setLoginStatus(status);
+    if (user) {
+      setUsername(user);
+    } else {
+      setUsername("");
+    }
+  };
+
+  const renderTabContent = () => {
+    switch (selectedTab) {
+      case 0:
+        return <AccountTab loginStatus={loginStatus} setLoginStatus={handleLoginStatusChange} />;
+      case 1:
+        return <PortfolioTab loginStatus={loginStatus} username={username} />;
+      case 2:
+        return <div>Stock Lists</div>;
+      case 3:
+        return <div>Predict</div>;
+      case 4:
+        return <div>Friends</div>;
+      default:
+        return null;
+    }
   };
 
   return (
@@ -20,12 +46,6 @@ export default function Home({ children }: HomeProps) {
           value={selectedTab} 
           onChange={handleTabChange}
           sx={{
-            '& .MuiTab-root': {
-              color: 'white',
-              '&.Mui-selected': {
-                color: 'white',
-              },
-            },
             '& .MuiTabs-indicator': {
               backgroundColor: 'white',
             },
@@ -38,9 +58,7 @@ export default function Home({ children }: HomeProps) {
           <Tab label="Friends" />
         </Tabs>
       </Box>
-      <Box sx={{ p: 3 }}>
-        {children}
-      </Box>
+      {renderTabContent()}
     </Box>
   );
 }

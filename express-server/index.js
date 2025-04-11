@@ -1,6 +1,16 @@
 const express = require("express");
-const pool = require("./db"); // we’ll create this file next
+const pool = require("./db"); // we'll create this file next
+const cors = require("cors");
 const app = express();
+
+// CORS configuration
+app.use(cors({
+  origin: 'http://localhost:3000', // Frontend URL
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // -- User management --
@@ -86,6 +96,21 @@ app.delete("/portfolios", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete portfolio" });
+  }
+});
+
+// Get all portfolios for a user
+app.get("/portfolios/:username", async (req, res) => {
+  const { username } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM Portfolios WHERE username = $1`,
+      [username]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch portfolios" });
   }
 });
 

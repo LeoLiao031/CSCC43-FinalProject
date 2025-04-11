@@ -30,6 +30,14 @@ export const createPortfolio = async (portName: string, cashDep: number, usernam
   return response.json();
 };
 
+export const getPortfolios = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/portfolios/${username}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return response.json();
+};
+
 export const deletePortfolio = async (portName: string, username: string) => {
   const response = await fetch(`${API_BASE_URL}/portfolios`, {
     method: 'DELETE',
