@@ -10,3 +10,13 @@ docker run \
     -e POSTGRES_DB=cscc43 \
     -d postgres
 ```
+
+# Running Frontend
+```
+npm run dev
+```
+
+# Running Backend
+```
+npm start
+```
