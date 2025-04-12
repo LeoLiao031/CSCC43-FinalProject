@@ -1370,6 +1370,21 @@ app.post("/friends", async (req, res) => {
       return res.status(409).json({ error: "Friend request already exists" });
     }
 
+    // Check if the receiver was recently deleted as a friend
+    const recentDeletionCheck = await pool.query(
+      `SELECT *
+       FROM FriendRequests
+       WHERE sender_id = $1
+         AND receiver_id = $2
+         AND status = 'DELETED' OR status = 'REJECTED'
+         AND updated_at > NOW() - INTERVAL '5 minutes'`,
+      [req_friend_name, rec_friend_name]
+    );
+
+    if (recentDeletionCheck.rows.length > 0) {
+      return res.status(403).json({ error: "You must wait 5 minutes before re-sending a friend request to this user" });
+    }
+
     // Insert a new friend request
     const result = await pool.query(
       `INSERT INTO Friends (req_friend, rec_friend)
@@ -1416,6 +1431,54 @@ app.put("/friends/accept", async (req, res) => {
   }
 });
 
+// Deny a friend request *
+app.put("/friends/deny", async (req, res) => {
+  const { req_friend_name, rec_friend_name } = req.body;
+
+  try {
+    // Check if the friend request exists and is pending
+    const requestCheck = await pool.query(
+      `SELECT relation_id
+       FROM Friends
+       WHERE req_friend = $1 AND rec_friend = $2 AND pending = true`,
+      [req_friend_name, rec_friend_name]
+    );
+
+    if (requestCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Friend request not found or already handled" });
+    }
+
+    // Delete the pending friend request
+    const deleteResult = await pool.query(
+      `DELETE FROM Friends
+       WHERE req_friend = $1 AND rec_friend = $2 AND pending = true`,
+      [req_friend_name, rec_friend_name]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      return res.status(404).json({ error: "Failed to deny friend request" });
+    }
+
+    // Log the denial in the FriendRequests table
+    await pool.query(
+      `INSERT INTO FriendRequests (sender_id, receiver_id, status)
+       VALUES (
+         $1,
+         $2,
+         'REJECTED'
+       )
+       ON CONFLICT (sender_id, receiver_id)
+       DO UPDATE SET status = 'REJECTED', updated_at = CURRENT_TIMESTAMP`,
+      [req_friend_name, rec_friend_name]
+    );
+
+    res.json({ message: "Friend request denied and logged successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to deny friend request" });
+  }
+});
+
 // Remove a friend *
 app.delete("/friends", async (req, res) => {
   const { req_friend_id, rec_friend_id } = req.body;
@@ -1433,7 +1496,16 @@ app.delete("/friends", async (req, res) => {
       return res.status(404).json({ error: "Friend relationship not found" });
     }
 
-    res.json({ message: "Friend removed successfully" });
+    // Log the removal in the FriendRequests table
+    await pool.query(
+      `INSERT INTO FriendRequests (sender_id, receiver_id, status)
+       VALUES ($1, $2, 'DELETED')
+       ON CONFLICT (sender_id, receiver_id)
+       DO UPDATE SET status = 'DELETED', updated_at = CURRENT_TIMESTAMP`,
+      [req_friend_id, rec_friend_id]
+    );
+
+    res.json({ message: "Friend removed successfully and logged in FriendRequests table" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to remove friend" });
@@ -1568,7 +1640,7 @@ app.get("/friends/non-friends/:username", async (req, res) => {
 // -- Stock List Review management --
 
 // Get all reviews for a stock list
-app.get("/api/review/list/:list_id", async (req, res) => {
+app.get("/review/list/:list_id", async (req, res) => {
   const { list_id } = req.params;
   const { user_id } = req.query;
 
@@ -1605,7 +1677,7 @@ app.get("/api/review/list/:list_id", async (req, res) => {
 });
 
 // Create a review for a stock list
-app.post("/api/review/:list_id", async (req, res) => {
+app.post("/review/:list_id", async (req, res) => {
   const { list_id } = req.params;
   const { user_id, content } = req.body;
 
@@ -1655,7 +1727,7 @@ app.post("/api/review/:list_id", async (req, res) => {
 });
 
 // Edit a review for a stock list
-app.put("/api/review/:review_id", async (req, res) => {
+app.put("/review/:review_id", async (req, res) => {
   const { review_id } = req.params;
   const { user_id, content } = req.body;
 
@@ -1692,7 +1764,7 @@ app.put("/api/review/:review_id", async (req, res) => {
 });
 
 // Delete a review for a stock list
-app.delete("/api/review/:review_id", async (req, res) => {
+app.delete("/review/:review_id", async (req, res) => {
   const { review_id } = req.params;
   const { user_id } = req.body;
 

@@ -7,5 +7,6 @@ CREATE TABLE StockHistory (
     low_price NUMERIC(12, 2) NOT NULL,
     close_price NUMERIC(12, 2) NOT NULL,
     volume BIGINT NOT NULL,
+    isHistory BOOLEAN DEFAULT TRUE,
     UNIQUE (stock_symbol, timestamp)
 );
