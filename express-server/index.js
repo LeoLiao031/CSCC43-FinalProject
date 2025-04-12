@@ -1238,14 +1238,15 @@ app.delete("/friends", async (req, res) => {
 });
 
 // Search for new friends
-app.get("/friends/search/:query", async (req, res) => {
-  const { query } = req.params;
+app.get("/friends/search/:query/:user_id", async (req, res) => {
+  const { query, user_id } = req.params;
+  
   try {
     const result = await pool.query(
       `SELECT id AS user_id, username
        FROM Users
-       WHERE username ILIKE $1`,
-      [`${query}%`]
+       WHERE username ILIKE $1 AND id != $2`,
+      [`${query}%`, user_id]
     );
     res.json(result.rows);
   } catch (err) {

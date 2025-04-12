@@ -5,11 +5,12 @@ import { createUser, getUser } from "../../../endpoints/api";
 
 interface AccountTabProps {
   loginStatus: boolean;
-  setLoginStatus: (status: boolean, username?: string) => void;
+  setLoginStatus: (status: boolean, username?: string, id?: number) => void;
+  username: string;
+  setUsername: (username: string) => void;
 }
 
-export default function AccountTab({ loginStatus, setLoginStatus }: AccountTabProps) {
-  const [username, setUsername] = useState("");
+export default function AccountTab({ loginStatus, setLoginStatus, username, setUsername }: AccountTabProps) {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -27,7 +28,7 @@ export default function AccountTab({ loginStatus, setLoginStatus }: AccountTabPr
           setError(response.error);
           return;
         }
-        setLoginStatus(true, username);
+        setLoginStatus(true, username, response.id);
       } else {
         // Login existing user
         const response = await getUser(username);
@@ -37,7 +38,7 @@ export default function AccountTab({ loginStatus, setLoginStatus }: AccountTabPr
         }
         // TODO: Implement proper password verification
         if (response.password === password) {
-          setLoginStatus(true, username);
+          setLoginStatus(true, username, response.id);
         } else {
           setError("Invalid username or password");
         }

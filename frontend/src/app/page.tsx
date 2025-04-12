@@ -3,29 +3,33 @@ import { Box, Tabs, Tab } from "@mui/material";
 import { useState } from "react";
 import AccountTab from "./components/AccountTab";
 import PortfolioTab from "./components/PortfolioTab";
+import FriendsTab from "./components/FriendsTab";
 
 export default function Home() {
   const [selectedTab, setSelectedTab] = useState(0);
   const [loginStatus, setLoginStatus] = useState(false);
   const [username, setUsername] = useState("");
+  const [userId, setUserId] = useState(0);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setSelectedTab(newValue);
   };
 
-  const handleLoginStatusChange = (status: boolean, user?: string) => {
+  const handleLoginStatusChange = (status: boolean, user?: string, id?: number) => {
     setLoginStatus(status);
-    if (user) {
+    if (user && id) {
       setUsername(user);
+      setUserId(id);
     } else {
       setUsername("");
+      setUserId(0);
     }
   };
 
   const renderTabContent = () => {
     switch (selectedTab) {
       case 0:
-        return <AccountTab loginStatus={loginStatus} setLoginStatus={handleLoginStatusChange} />;
+        return <AccountTab loginStatus={loginStatus} setLoginStatus={handleLoginStatusChange} username={username} setUsername={setUsername} />;
       case 1:
         return <PortfolioTab loginStatus={loginStatus} username={username} />;
       case 2:
@@ -33,7 +37,7 @@ export default function Home() {
       case 3:
         return <div>Predict</div>;
       case 4:
-        return <div>Friends</div>;
+        return <FriendsTab loginStatus={loginStatus} userId={userId.toString()} />;
       default:
         return null;
     }
