@@ -372,3 +372,42 @@ export const getStockPrediction = async (stockSymbol: string, period: number = 7
     return { error: 'Failed to fetch stock prediction' };
   }
 };
+
+export const addStockData = async (
+  stockSymbol: string,
+  timestamp: string,
+  openPrice: number,
+  highPrice: number,
+  lowPrice: number,
+  closePrice: number,
+  volume: number
+) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stocks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        stock_symbol: stockSymbol,
+        timestamp,
+        open_price: openPrice,
+        high_price: highPrice,
+        low_price: lowPrice,
+        close_price: closePrice,
+        volume
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { error: errorData.error || 'Failed to add stock data' };
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error adding stock data:', error);
+    return { error: 'Failed to add stock data' };
+  }
+};

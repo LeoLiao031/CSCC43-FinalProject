@@ -1,7 +1,7 @@
 "use client";
 import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo, getStockHistory, getStockPrediction } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo, getStockHistory, getStockPrediction, addStockData } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -11,6 +11,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import TimelineIcon from '@mui/icons-material/Timeline';
+import AddCircleIcon from '@mui/icons-material/AddCircle';
 
 interface PortfolioTabProps {
   loginStatus: boolean;
@@ -84,6 +85,16 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
   const [stockPrediction, setStockPrediction] = useState<StockPrediction | null>(null);
   const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
   const [predictionPeriod, setPredictionPeriod] = useState<number>(7);
+  const [selectedStockForData, setSelectedStockForData] = useState<{ symbol: string; portfolioId: number } | null>(null);
+  const [newStockData, setNewStockData] = useState({
+    timestamp: "",
+    openPrice: "",
+    highPrice: "",
+    lowPrice: "",
+    closePrice: "",
+    volume: ""
+  });
+  const [isAddingStockData, setIsAddingStockData] = useState(false);
 
   useEffect(() => {
     if (loginStatus && username) {
@@ -385,6 +396,58 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
     }
   };
 
+  const handleOpenAddDataDialog = (symbol: string, portfolioId: number) => {
+    setSelectedStockForData({ symbol, portfolioId });
+    setNewStockData({
+      timestamp: "",
+      openPrice: "",
+      highPrice: "",
+      lowPrice: "",
+      closePrice: "",
+      volume: ""
+    });
+  };
+
+  const handleCloseAddDataDialog = () => {
+    setSelectedStockForData(null);
+    setNewStockData({
+      timestamp: "",
+      openPrice: "",
+      highPrice: "",
+      lowPrice: "",
+      closePrice: "",
+      volume: ""
+    });
+  };
+
+  const handleAddStockData = async () => {
+    if (!selectedStockForData) return;
+
+    setIsAddingStockData(true);
+    try {
+      const response = await addStockData(
+        selectedStockForData.symbol,
+        newStockData.timestamp,
+        parseFloat(newStockData.openPrice),
+        parseFloat(newStockData.highPrice),
+        parseFloat(newStockData.lowPrice),
+        parseFloat(newStockData.closePrice),
+        parseInt(newStockData.volume)
+      );
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess("Stock data added successfully!");
+      handleCloseAddDataDialog();
+    } catch (error) {
+      console.error('Error adding stock data:', error);
+      setError("Failed to add stock data");
+    } finally {
+      setIsAddingStockData(false);
+    }
+  };
+
   if (!loginStatus) {
     return (
       <Box sx={{ p: 3 }}>
@@ -565,6 +628,12 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                                     onClick={() => handleOpenPredictionDialog(holding.stock_symbol || "", portfolio.port_id)}
                                   >
                                     <TimelineIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleOpenAddDataDialog(holding.stock_symbol || "", portfolio.port_id)}
+                                  >
+                                    <AddCircleIcon />
                                   </IconButton>
                                   <IconButton
                                     size="small"
@@ -889,6 +958,74 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
             disabled={isLoadingPrediction}
           >
             Calculate Prediction
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Stock Data Dialog */}
+      <Dialog 
+        open={!!selectedStockForData} 
+        onClose={handleCloseAddDataDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Add Daily Stock Data for {selectedStockForData?.symbol}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2, mb: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              type="date"
+              label="Date"
+              value={newStockData.timestamp}
+              onChange={(e) => setNewStockData({ ...newStockData, timestamp: e.target.value })}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              type="number"
+              label="Open Price"
+              value={newStockData.openPrice}
+              onChange={(e) => setNewStockData({ ...newStockData, openPrice: e.target.value })}
+              inputProps={{ step: "0.01" }}
+            />
+            <TextField
+              type="number"
+              label="High Price"
+              value={newStockData.highPrice}
+              onChange={(e) => setNewStockData({ ...newStockData, highPrice: e.target.value })}
+              inputProps={{ step: "0.01" }}
+            />
+            <TextField
+              type="number"
+              label="Low Price"
+              value={newStockData.lowPrice}
+              onChange={(e) => setNewStockData({ ...newStockData, lowPrice: e.target.value })}
+              inputProps={{ step: "0.01" }}
+            />
+            <TextField
+              type="number"
+              label="Close Price"
+              value={newStockData.closePrice}
+              onChange={(e) => setNewStockData({ ...newStockData, closePrice: e.target.value })}
+              inputProps={{ step: "0.01" }}
+            />
+            <TextField
+              type="number"
+              label="Volume"
+              value={newStockData.volume}
+              onChange={(e) => setNewStockData({ ...newStockData, volume: e.target.value })}
+              inputProps={{ min: 0 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAddDataDialog}>Cancel</Button>
+          <Button 
+            onClick={handleAddStockData}
+            variant="contained"
+            disabled={isAddingStockData || !newStockData.timestamp || !newStockData.openPrice || !newStockData.highPrice || !newStockData.lowPrice || !newStockData.closePrice || !newStockData.volume}
+          >
+            Add Data
           </Button>
         </DialogActions>
       </Dialog>
