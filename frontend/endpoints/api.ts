@@ -220,8 +220,8 @@ export const removeFriend = async (reqFriendId: string, recFriendId: string) => 
   return response.json();
 };
 
-export const searchFriends = async (query: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/search/${query}`);
+export const searchFriends = async (query: string, userId: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/search/${query}/${userId}`);
   return response.json();
 };
 
