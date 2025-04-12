@@ -760,8 +760,8 @@ app.post("/stocks", async (req, res) => {
 
     // Insert a new stock history record
     const result = await pool.query(
-      `INSERT INTO StockHistory (stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO StockHistory (stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume, isHistory)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
        RETURNING history_id, stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume`,
       [stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume]
     );
