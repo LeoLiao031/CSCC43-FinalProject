@@ -37,7 +37,7 @@ export default function Home() {
       case 2:
         return <StockListsTab loginStatus={loginStatus} userId={userId} username={username} />;
       case 3:
-        return <ReviewsTab loginStatus={loginStatus} userId={userId} />;
+        return <ReviewsTab loginStatus={loginStatus} userId={userId} username={username} />;
       case 4:
         return <FriendsTab loginStatus={loginStatus} userId={userId} username={username} />;
       default:

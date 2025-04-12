@@ -66,7 +66,6 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedListForSharing, setSelectedListForSharing] = useState<StockList | null>(null);
 
-  console.log(username);
   useEffect(() => {
     if (loginStatus) {
       fetchStockLists();

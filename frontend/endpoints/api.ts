@@ -255,13 +255,13 @@ export const getNonFriendsList = async (username: string) => {
 };
 
 // Stock List Reviews
-export const getStockListReviews = async (listId: string, userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/review/list/${listId}?user_id=${userId}`);
+export const getStockListReviews = async (listId: number, userId: number) => {
+  const response = await fetch(`${API_BASE_URL}/review/list/${listId}?user_id=${userId}`);
   return response.json();
 };
 
-export const createStockListReview = async (listId: string, userId: string, content: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/review/${listId}`, {
+export const createStockListReview = async (listId: number, userId: number, content: string) => {
+  const response = await fetch(`${API_BASE_URL}/review/${listId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId, content }),
@@ -269,8 +269,8 @@ export const createStockListReview = async (listId: string, userId: string, cont
   return response.json();
 };
 
-export const editStockListReview = async (reviewId: string, userId: string, content: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/review/${reviewId}`, {
+export const editStockListReview = async (reviewId: number, userId: number, content: string) => {
+  const response = await fetch(`${API_BASE_URL}/review/${reviewId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId, content }),
@@ -278,8 +278,8 @@ export const editStockListReview = async (reviewId: string, userId: string, cont
   return response.json();
 };
 
-export const deleteStockListReview = async (reviewId: string, userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/review/${reviewId}`, {
+export const deleteStockListReview = async (reviewId: number, userId: number) => {
+  const response = await fetch(`${API_BASE_URL}/review/${reviewId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId }),
@@ -288,7 +288,7 @@ export const deleteStockListReview = async (reviewId: string, userId: string) =>
 };
 
 // Stock Reviews
-export const createReview = async (stockSymbol: string, rating: number, comment: string, userId: string) => {
+export const createReview = async (stockSymbol: string, rating: number, comment: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/reviews`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -297,7 +297,7 @@ export const createReview = async (stockSymbol: string, rating: number, comment:
   return response.json();
 };
 
-export const deleteReview = async (reviewId: string, userId: string) => {
+export const deleteReview = async (reviewId: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -306,7 +306,7 @@ export const deleteReview = async (reviewId: string, userId: string) => {
   return response.json();
 };
 
-export const getReviews = async (userId: string) => {
+export const getReviews = async (userId: number) => {
   const response = await fetch(`${API_BASE_URL}/reviews/${userId}`);
   return response.json();
 };
