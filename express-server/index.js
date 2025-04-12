@@ -971,8 +971,8 @@ app.get("/stocklists/public", async (req, res) => {
   }
 });
 
-// Statistics of Stock List *
-app.get("/stocklists/:list_id/statistics", async (req, res) => {
+// Details of Stock List *
+app.get("/stocklists/:list_id/details", async (req, res) => {
   const { list_id } = req.params;
   const { user_id } = req.query; // User ID to check access
 
@@ -1033,6 +1033,131 @@ app.get("/stocklists/:list_id/statistics", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock list statistics" });
+  }
+});
+
+// Get stock list statistics
+app.get("/stocklists/:list_id/statistics", async (req, res) => {
+  const { list_id } = req.params;
+  const { start_date, end_date } = req.query;
+
+  try {
+    // Validate stock list existence
+    const stockListCheck = await pool.query(
+      `SELECT list_id, name
+       FROM StockLists
+       WHERE list_id = $1`,
+      [list_id]
+    );
+
+    if (stockListCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
+    }
+
+    // Fetch stocks in the stock list
+    const stockListStocks = await pool.query(
+      `SELECT sli.stock_symbol, sli.quantity
+       FROM StockListStocks sli
+       WHERE sli.list_id = $1`,
+      [list_id]
+    );
+
+    if (stockListStocks.rows.length === 0) {
+      return res.status(404).json({ error: "No stocks found in the stock list" });
+    }
+
+    const stockSymbols = stockListStocks.rows.map((row) => row.stock_symbol);
+
+    // Calculate Coefficient of Variation and Beta for Each Stock
+    const stockStatisticsQuery = `
+      WITH StockReturns AS (
+        SELECT 
+            s.stock_symbol,
+            s.timestamp,
+            (s.close_price - LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp)) /
+            LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp) AS stock_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+      ),
+      MarketReturns AS (
+        SELECT 
+            s.timestamp,
+            AVG(s.close_price) AS market_price,
+            (AVG(s.close_price) - LAG(AVG(s.close_price)) OVER (ORDER BY s.timestamp)) /
+            LAG(AVG(s.close_price)) OVER (ORDER BY s.timestamp) AS market_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+        GROUP BY s.timestamp
+      )
+      SELECT 
+          sr.stock_symbol,
+          STDDEV(sr.stock_return) / AVG(ABS(sr.stock_return)) AS coefficient_of_variation,
+          COVAR_SAMP(sr.stock_return, mr.market_return) / VAR_SAMP(mr.market_return) AS beta
+      FROM StockReturns sr
+      JOIN MarketReturns mr ON sr.timestamp = mr.timestamp
+      GROUP BY sr.stock_symbol;
+    `;
+
+    const stockStatisticsResult = await pool.query(stockStatisticsQuery, [
+      stockSymbols,
+      start_date || "2015-01-01",
+      end_date || new Date().toISOString(),
+    ]);
+
+    const stockStatistics = stockStatisticsResult.rows;
+
+    // Calculate Covariance and Correlation Matrix
+    const covarianceCorrelationQuery = `
+      WITH StockReturns AS (
+        SELECT 
+            s.stock_symbol,
+            s.timestamp,
+            (s.close_price - LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp)) /
+            LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp) AS stock_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+      ),
+      CombinedData AS (
+        SELECT
+            sr1.stock_symbol AS stock1,
+            sr2.stock_symbol AS stock2,
+            sr1.stock_return AS return1,
+            sr2.stock_return AS return2
+        FROM StockReturns sr1
+        JOIN StockReturns sr2
+          ON sr1.timestamp = sr2.timestamp
+        WHERE sr1.stock_symbol = ANY($1::text[])
+          AND sr2.stock_symbol = ANY($1::text[])
+      )
+      SELECT
+          cd.stock1,
+          cd.stock2,
+          COVAR_SAMP(cd.return1, cd.return2) AS covariance,
+          CORR(cd.return1, cd.return2) AS correlation
+      FROM CombinedData cd
+      GROUP BY cd.stock1, cd.stock2;
+    `;
+
+    const covarianceCorrelationResult = await pool.query(covarianceCorrelationQuery, [
+      stockSymbols,
+      start_date || "1970-01-01",
+      end_date || new Date().toISOString(),
+    ]);
+
+    const covarianceCorrelationMatrix = covarianceCorrelationResult.rows;
+
+    // Return the results
+    res.json({
+      stockListId: list_id,
+      stockStatistics,
+      covarianceCorrelationMatrix,
+    });
+  } catch (err) {
+    console.error("Error fetching stock list statistics:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch stock list statistics" });
   }
 });
