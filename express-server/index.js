@@ -213,10 +213,22 @@ app.get("/portfolios/:port_id/performance", async (req, res) => {
   }
 });
 
+// In-memory cache
+const portfolioStatisticsCache = new Map();
+
 // Get portfolio statistics
 app.get("/portfolios/:port_id/statistics", async (req, res) => {
   const { port_id } = req.params;
   const { start_date, end_date } = req.query;
+
+  // Generate a unique cache key based on the portfolio ID and date range
+  const cacheKey = `${port_id}-${start_date || "default"}-${end_date || "default"}`;
+
+  // Check if the result is already cached
+  if (portfolioStatisticsCache.has(cacheKey)) {
+    console.log("Cache hit for portfolio statistics");
+    return res.json(portfolioStatisticsCache.get(cacheKey));
+  }
 
   try {
     // Validate portfolio existence
@@ -326,12 +338,18 @@ app.get("/portfolios/:port_id/statistics", async (req, res) => {
 
     const covarianceCorrelationMatrix = covarianceCorrelationResult.rows;
 
-    // Return the results
-    res.json({
+    // Prepare the response
+    const response = {
       portfolioId: port_id,
       stockStatistics,
       covarianceCorrelationMatrix,
-    });
+    };
+
+    // Cache the result
+    portfolioStatisticsCache.set(cacheKey, response);
+
+    // Return the results
+    res.json(response);
   } catch (err) {
     console.error("Error fetching portfolio statistics:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch portfolio statistics" });
@@ -1037,10 +1055,22 @@ app.get("/stocklists/:list_id/details", async (req, res) => {
   }
 });
 
+// In-memory cache for stock list statistics
+const stockListStatisticsCache = new Map();
+
 // Get stock list statistics
 app.get("/stocklists/:list_id/statistics", async (req, res) => {
   const { list_id } = req.params;
   const { start_date, end_date } = req.query;
+
+  // Generate a unique cache key based on the stock list ID and date range
+  const cacheKey = `${list_id}-${start_date || "default"}-${end_date || "default"}`;
+
+  // Check if the result is already cached
+  if (stockListStatisticsCache.has(cacheKey)) {
+    console.log("Cache hit for stock list statistics");
+    return res.json(stockListStatisticsCache.get(cacheKey));
+  }
 
   try {
     // Validate stock list existence
@@ -1150,12 +1180,18 @@ app.get("/stocklists/:list_id/statistics", async (req, res) => {
 
     const covarianceCorrelationMatrix = covarianceCorrelationResult.rows;
 
-    // Return the results
-    res.json({
+    // Prepare the response
+    const response = {
       stockListId: list_id,
       stockStatistics,
       covarianceCorrelationMatrix,
-    });
+    };
+
+    // Cache the result
+    stockListStatisticsCache.set(cacheKey, response);
+
+    // Return the results
+    res.json(response);
   } catch (err) {
     console.error("Error fetching stock list statistics:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch stock list statistics" });
