@@ -3,7 +3,7 @@ import { Box, Typography, TextField, Button, Alert, List, ListItem, ListItemText
 import { useState, useEffect } from "react";
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { getStockListReviews, createStockListReview, editStockListReview, deleteStockListReview, getStockListData, getPublicStockLists, getSharedStockLists } from "../../../endpoints/api";
+import { getStockListReviews, createStockListReview, editStockListReview, deleteStockListReview, getStockListData, getPublicStockLists, getSharedStockLists, getStockLists } from "../../../endpoints/api";
 
 interface ReviewsTabProps {
   loginStatus: boolean;
@@ -54,9 +54,10 @@ export default function ReviewsTab({ loginStatus, userId, username }: ReviewsTab
 
   const fetchAccessibleLists = async () => {
     try {
-      const [publicLists, sharedLists] = await Promise.all([
+      const [publicLists, sharedLists, myLists] = await Promise.all([
         getPublicStockLists(),
-        getSharedStockLists(userId.toString())
+        getSharedStockLists(userId.toString()),
+        getStockLists(userId.toString())
       ]);
 
       if (publicLists.error) {
@@ -67,9 +68,13 @@ export default function ReviewsTab({ loginStatus, userId, username }: ReviewsTab
         setError(sharedLists.error);
         return;
       }
+      if (myLists.error) {
+        setError(myLists.error);
+        return;
+      }
 
       // Combine and deduplicate lists
-      const combinedLists = [...publicLists, ...sharedLists];
+      const combinedLists = [...myLists, ...publicLists, ...sharedLists];
       const uniqueLists = combinedLists.reduce((acc: StockList[], current: StockList) => {
         const exists = acc.find(item => item.list_id === current.list_id);
         if (!exists) {
@@ -93,7 +98,7 @@ export default function ReviewsTab({ loginStatus, userId, username }: ReviewsTab
         setError(response.error);
         return;
       }
-      setIsOwner(response.stockList.user_id === userId);
+      setIsOwner(response.stockList.creator_name === username);
     } catch (error) {
       console.error('Error checking ownership:', error);
       setError("Failed to check stock list ownership");
