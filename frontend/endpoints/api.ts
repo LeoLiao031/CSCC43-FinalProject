@@ -21,7 +21,7 @@ export const searchUsers = async (query: string) => {
 };
 
 // Portfolio Management
-export const createPortfolio = async (portName: string, cashDep: number, userId: string) => {
+export const createPortfolio = async (portName: string, cashDep: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +30,7 @@ export const createPortfolio = async (portName: string, cashDep: number, userId:
   return response.json();
 };
 
-export const deletePortfolio = async (portName: string, userId: string) => {
+export const deletePortfolio = async (portName: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -39,7 +39,7 @@ export const deletePortfolio = async (portName: string, userId: string) => {
   return response.json();
 };
 
-export const getPortfolios = async (userId: string) => {
+export const getPortfolios = async (userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/${userId}`);
   return response.json();
 };
@@ -49,11 +49,11 @@ export const getPortfolioInfo = async (portId: string, userId: string) => {
   return response.json();
 };
 
-export const depositCash = async (portName: string, userId: string, amount: number) => {
+export const depositCash = async (portId: number, userId: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/deposit`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ port_name: portName, user_id: userId, amount }),
+    body: JSON.stringify({ port_id: portId, user_id: userId, amount }),
   });
   return response.json();
 };
@@ -67,11 +67,11 @@ export const withdrawCash = async (portName: string, userId: string, amount: num
   return response.json();
 };
 
-export const transferCash = async (givePort: string, getPort: string, userId: string, amount: number) => {
+export const transferCash = async (givePortId: number, getPortId: number, owner: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/transfer`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ give_port: givePort, get_port: getPort, user_id: userId, amount }),
+    body: JSON.stringify({ give_port_id: givePortId, get_port_id: getPortId, owner: owner, amount: amount }),
   });
   return response.json();
 };

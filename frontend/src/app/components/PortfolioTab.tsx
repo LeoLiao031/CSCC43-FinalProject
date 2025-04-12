@@ -1,5 +1,5 @@
 "use client";
-import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails } from "@mui/material";
+import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 import { useState, useEffect } from "react";
 import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -10,25 +10,29 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 interface PortfolioTabProps {
   loginStatus: boolean;
   username: string;
+  userId: number;
 }
 
 interface Portfolio {
+  port_id: number;
   port_name: string;
   cash_dep: number;
-  username: string;
+  stocks_value: number;
+  total_value: number;
 }
 
-export default function PortfolioTab({ loginStatus, username }: PortfolioTabProps) {
+export default function PortfolioTab({ loginStatus, username, userId }: PortfolioTabProps) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [newPortfolioName, setNewPortfolioName] = useState("");
   const [initialDeposit, setInitialDeposit] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForDeposit, setSelectedPortfolioForDeposit] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForTransfer, setSelectedPortfolioForTransfer] = useState<Portfolio | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState("");
-  const [targetPortfolio, setTargetPortfolio] = useState("");
+  const [targetPortfolio, setTargetPortfolio] = useState<Portfolio | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -41,7 +45,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     setIsLoading(true);
     setError("");
     try {
-      const response = await getPortfolios(username);
+      const response = await getPortfolios(userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -72,7 +76,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
 
     try {
-      const response = await createPortfolio(newPortfolioName, depositAmount, username);
+      const response = await createPortfolio(newPortfolioName, depositAmount, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -89,7 +93,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
 
   const handleDeletePortfolio = async (portfolioName: string) => {
     try {
-      const response = await deletePortfolio(portfolioName, username);
+      const response = await deletePortfolio(portfolioName, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -102,7 +106,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
   };
 
-  const handleDeposit = async (portfolioName: string) => {
+  const handleDeposit = async (portfolioId: number) => {
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount <= 0) {
       setError("Please enter a valid deposit amount");
@@ -110,14 +114,14 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
 
     try {
-      const response = await depositCash(portfolioName, username, amount);
+      const response = await depositCash(portfolioId, userId, amount);
       if (response.error) {
         setError(response.error);
         return;
       }
-      setSuccess(`Successfully deposited $${amount} into ${portfolioName}`);
+      setSuccess(`Successfully deposited $${amount}`);
       setDepositAmount("");
-      setSelectedPortfolio(null);
+      setSelectedPortfolioForDeposit(null);
       fetchPortfolios();
     } catch (error) {
       console.error('Error:', error);
@@ -126,7 +130,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
   };
 
   const handleTransfer = async () => {
-    if (!selectedPortfolio) return;
+    if (!selectedPortfolioForTransfer) return;
 
     const amount = parseFloat(transferAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -141,19 +145,20 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
 
     try {
       const response = await transferCash(
-        selectedPortfolio.port_name,
-        targetPortfolio,
-        username,
+        selectedPortfolioForTransfer.port_id,
+        targetPortfolio.port_id,
+        userId,
         amount
       );
       if (response.error) {
         setError(response.error);
         return;
       }
-      setSuccess(`Successfully transferred $${amount} to ${targetPortfolio}`);
+      setSuccess(`Successfully transferred $${amount} to ${targetPortfolio.port_name}`);
       setTransferAmount("");
-      setTargetPortfolio("");
+      setTargetPortfolio(null);
       setTransferDialogOpen(false);
+      setSelectedPortfolioForTransfer(null);
       fetchPortfolios();
     } catch (error) {
       console.error('Error:', error);
@@ -253,14 +258,14 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <IconButton
                     size="small"
-                    onClick={() => setSelectedPortfolio(portfolio)}
+                    onClick={() => setSelectedPortfolioForDeposit(portfolio)}
                   >
                     <AddIcon />
                   </IconButton>
                   <IconButton
                     size="small"
                     onClick={() => {
-                      setSelectedPortfolio(portfolio);
+                      setSelectedPortfolioForTransfer(portfolio);
                       setTransferDialogOpen(true);
                     }}
                   >
@@ -305,7 +310,10 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
                         Current Balance: ${portfolio.cash_dep}
                       </Typography>
                       <Typography variant="body2">
-                        Owner: {portfolio.username}
+                        Stocks Value: ${portfolio.stocks_value}
+                      </Typography>
+                      <Typography variant="body2">
+                        Total Value: ${portfolio.total_value}
                       </Typography>
                     </Box>
                   </Box>
@@ -317,9 +325,9 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
       )}
 
       {/* Deposit Dialog */}
-      {selectedPortfolio && (
-        <Dialog open={!!selectedPortfolio} onClose={() => setSelectedPortfolio(null)}>
-          <DialogTitle>Deposit to {selectedPortfolio.port_name}</DialogTitle>
+      {selectedPortfolioForDeposit && (
+        <Dialog open={!!selectedPortfolioForDeposit} onClose={() => setSelectedPortfolioForDeposit(null)}>
+          <DialogTitle>Deposit to {selectedPortfolioForDeposit.port_name}</DialogTitle>
           <DialogContent>
             <TextField
               autoFocus
@@ -332,15 +340,18 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setSelectedPortfolio(null)}>Cancel</Button>
-            <Button onClick={() => handleDeposit(selectedPortfolio.port_name)}>Deposit</Button>
+            <Button onClick={() => setSelectedPortfolioForDeposit(null)}>Cancel</Button>
+            <Button onClick={() => handleDeposit(selectedPortfolioForDeposit.port_id)}>Deposit</Button>
           </DialogActions>
         </Dialog>
       )}
 
       {/* Transfer Dialog */}
-      <Dialog open={transferDialogOpen} onClose={() => setTransferDialogOpen(false)}>
-        <DialogTitle>Transfer from {selectedPortfolio?.port_name}</DialogTitle>
+      <Dialog open={transferDialogOpen} onClose={() => {
+        setTransferDialogOpen(false);
+        setSelectedPortfolioForTransfer(null);
+      }}>
+        <DialogTitle>Transfer from {selectedPortfolioForTransfer?.port_name}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -352,16 +363,33 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
             onChange={(e) => setTransferAmount(e.target.value)}
             sx={{ mb: 2 }}
           />
-          <TextField
-            margin="dense"
-            label="Target Portfolio"
-            fullWidth
-            value={targetPortfolio}
-            onChange={(e) => setTargetPortfolio(e.target.value)}
-          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Target Portfolio</InputLabel>
+            <Select
+              value={targetPortfolio?.port_id || ''}
+              label="Target Portfolio"
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const selectedPortfolio = portfolios.find(p => p.port_id === selectedId);
+                setTargetPortfolio(selectedPortfolio || null);
+              }}
+            >
+              {portfolios
+                .filter(portfolio => portfolio.port_id !== selectedPortfolioForTransfer?.port_id)
+                .map(portfolio => (
+                  <MenuItem key={portfolio.port_id} value={portfolio.port_id}>
+                    {portfolio.port_name} (${portfolio.cash_dep})
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setTransferDialogOpen(false);
+            setSelectedPortfolioForTransfer(null);
+            setTargetPortfolio(null);
+          }}>Cancel</Button>
           <Button onClick={handleTransfer}>Transfer</Button>
         </DialogActions>
       </Dialog>

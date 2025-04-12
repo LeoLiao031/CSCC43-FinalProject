@@ -31,7 +31,7 @@ export default function Home() {
       case 0:
         return <AccountTab loginStatus={loginStatus} setLoginStatus={handleLoginStatusChange} username={username} setUsername={setUsername} />;
       case 1:
-        return <PortfolioTab loginStatus={loginStatus} username={username} />;
+        return <PortfolioTab loginStatus={loginStatus} username={username} userId={userId} />;
       case 2:
         return <div>Stock Lists</div>;
       case 3:
