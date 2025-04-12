@@ -8,6 +8,7 @@ import { getStockListReviews, createStockListReview, editStockListReview, delete
 interface ReviewsTabProps {
   loginStatus: boolean;
   userId: number;
+  username: string;
 }
 
 interface Review {
@@ -15,6 +16,7 @@ interface Review {
   content: string;
   created_at: string;
   reviewer: string;
+  edited_at?: string;
 }
 
 interface StockList {
@@ -24,7 +26,7 @@ interface StockList {
   visibility: string;
 }
 
-export default function ReviewsTab({ loginStatus, userId }: ReviewsTabProps) {
+export default function ReviewsTab({ loginStatus, userId, username }: ReviewsTabProps) {
   const [selectedListId, setSelectedListId] = useState<number | null>(null);
   const [accessibleLists, setAccessibleLists] = useState<StockList[]>([]);
   const [isOwner, setIsOwner] = useState(false);
@@ -283,22 +285,23 @@ export default function ReviewsTab({ loginStatus, userId }: ReviewsTabProps) {
                 <ListItem
                   key={review.review_id}
                   secondaryAction={
-                    <Box>
-                      {review.reviewer === userId.toString() && (
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      {review.reviewer === username && (
                         <IconButton
-                          edge="end"
+                          size="small"
                           onClick={() => handleEditDialogOpen(review)}
-                          sx={{ mr: 1 }}
+                          sx={{ color: 'primary.main' }}
                         >
-                          <EditIcon />
+                          <EditIcon fontSize="small" />
                         </IconButton>
                       )}
-                      {(review.reviewer === userId.toString() || isOwner) && (
+                      {(review.reviewer === username || isOwner) && (
                         <IconButton
-                          edge="end"
+                          size="small"
                           onClick={() => handleDeleteReview(review.review_id)}
+                          sx={{ color: 'error.main' }}
                         >
-                          <DeleteIcon />
+                          <DeleteIcon fontSize="small" />
                         </IconButton>
                       )}
                     </Box>
@@ -306,9 +309,16 @@ export default function ReviewsTab({ loginStatus, userId }: ReviewsTabProps) {
                 >
                   <ListItemText
                     primary={
-                      <Typography variant="subtitle1" component="span">
-                        {review.reviewer}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="subtitle1" component="span">
+                          {review.reviewer}
+                        </Typography>
+                        {review.reviewer === username && (
+                          <Typography variant="caption" color="primary">
+                            (Your Review)
+                          </Typography>
+                        )}
+                      </Box>
                     }
                     secondary={
                       <Box component="span">
@@ -317,6 +327,11 @@ export default function ReviewsTab({ loginStatus, userId }: ReviewsTabProps) {
                         </Typography>
                         <Typography variant="caption" color="text.secondary" component="span" display="block">
                           {new Date(review.created_at).toLocaleDateString()}
+                          {review.edited_at && (
+                            <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 1 }}>
+                              (edited)
+                            </Typography>
+                          )}
                         </Typography>
                       </Box>
                     }
