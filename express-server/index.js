@@ -64,14 +64,14 @@ app.get("/users/search/:query", async (req, res) => {
 
 // Create a portfolio
 app.post("/portfolios", async (req, res) => {
-  const { port_name, cash_dep, username } = req.body;
+  const { port_name, cash_dep, user_id } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO Portfolios (port_name, cash_dep, username)
+      `INSERT INTO Portfolios (port_name, cash_dep, user_id)
        SELECT $1, $2, $3
-       WHERE NOT EXISTS (SELECT 1 FROM Portfolios WHERE port_name = $1 AND username = $3)
-       RETURNING port_name, cash_dep, username`,
-      [port_name, cash_dep, username]
+       WHERE NOT EXISTS (SELECT 1 FROM Portfolios WHERE port_name = $1 AND user_id = $3)
+       RETURNING port_name, cash_dep, user_id`,
+      [port_name, cash_dep, user_id]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -82,12 +82,12 @@ app.post("/portfolios", async (req, res) => {
 
 // Delete a portfolio
 app.delete("/portfolios", async (req, res) => {
-  const { port_name, username } = req.body;
+  const { port_name, user_id } = req.body;
   try {
     const result = await pool.query(
       `DELETE FROM Portfolios 
-       WHERE port_name = $1 AND username = $2`,
-      [port_name, username]
+       WHERE port_name = $1 AND user_id = $2`,
+      [port_name, user_id]
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Portfolio not found" });
@@ -99,14 +99,37 @@ app.delete("/portfolios", async (req, res) => {
   }
 });
 
-// Get all portfolios for a user
-app.get("/portfolios/:username", async (req, res) => {
-  const { username } = req.params;
+// Get all portfolios for a user with market value
+app.get("/portfolios/:user_id", async (req, res) => {
+  const { user_id } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT * FROM Portfolios WHERE username = $1`,
-      [username]
+      `SELECT 
+         p.port_id,
+         p.port_name,
+         p.cash_dep,
+         COALESCE(SUM(sh.quantity * (
+           SELECT close_price
+           FROM StockHistory
+           WHERE StockHistory.stock_symbol = sh.stock_symbol
+           ORDER BY timestamp DESC
+           LIMIT 1
+         )), 0) AS stocks_value,
+         p.cash_dep + COALESCE(SUM(sh.quantity * (
+           SELECT close_price
+           FROM StockHistory
+           WHERE StockHistory.stock_symbol = sh.stock_symbol
+           ORDER BY timestamp DESC
+           LIMIT 1
+         )), 0) AS total_value
+       FROM Portfolios p
+       LEFT JOIN Stockholdings sh ON p.port_id = sh.port_id
+       WHERE p.user_id = $1
+       GROUP BY p.port_id, p.port_name, p.cash_dep`,
+      [user_id]
     );
+
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -114,20 +137,47 @@ app.get("/portfolios/:username", async (req, res) => {
   }
 });
 
-// Get portfolio info
-app.get("/portfolios/:port_id/:owner", async (req, res) => {
-  const { port_id, owner } = req.params;
+// Get portfolio info with detailed stock holdings and market value
+app.get("/portfolios/:port_id/:user_id", async (req, res) => {
+  const { port_id, user_id } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT *
-       FROM Portfolios
-       WHERE port_id = $1 AND username = $2
-       LIMIT 1`,
-      [port_id, owner]
+      `WITH latest_prices AS (
+         SELECT stock_symbol, close_price
+         FROM StockHistory
+         WHERE (stock_symbol, timestamp) IN (
+           SELECT stock_symbol, MAX(timestamp)
+           FROM StockHistory
+           GROUP BY stock_symbol
+         )
+       )
+       SELECT 
+         p.port_id,
+         p.port_name,
+         p.cash_dep,
+         COALESCE(SUM(sh.quantity * lp.close_price), 0) AS stocks_value,
+         p.cash_dep + COALESCE(SUM(sh.quantity * lp.close_price), 0) AS total_value,
+         json_agg(
+           json_build_object(
+             'stock_symbol', sh.stock_symbol,
+             'quantity', sh.quantity,
+             'close_price', lp.close_price,
+             'stock_value', sh.quantity * lp.close_price
+           )
+         ) AS stock_holdings
+       FROM Portfolios p
+       LEFT JOIN StockHoldings sh ON p.port_id = sh.port_id
+       LEFT JOIN latest_prices lp ON sh.stock_symbol = lp.stock_symbol
+       WHERE p.port_id = $1 AND p.user_id = $2
+       GROUP BY p.port_id, p.port_name, p.cash_dep`,
+      [port_id, user_id]
     );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Portfolio not found" });
     }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -137,22 +187,87 @@ app.get("/portfolios/:port_id/:owner", async (req, res) => {
 
 // Deposit cash into portfolio
 app.put("/portfolios/deposit", async (req, res) => {
-  const { port_name, owner, amount } = req.body;
+  const { port_name, user_id, amount } = req.body;
   try {
+    // Check if the user is the owner of the portfolio
+    const ownershipCheck = await pool.query(
+      `SELECT port_id, user_id 
+       FROM Portfolios 
+       WHERE port_name = $1 AND user_id = $2`,
+      [port_name, user_id]
+    );
+
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
+    }
+
+    const { port_id } = ownershipCheck.rows[0];
+
+    // Update the portfolio's cash balance
     const result = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep + $1
-       WHERE port_name = $2 AND username = $3
-       RETURNING port_name, cash_dep, username`,
-      [amount, port_name, owner]
+       WHERE port_id = $2
+       RETURNING port_id, port_name, cash_dep, user_id`,
+      [amount, port_id]
     );
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Portfolio not found" });
-    }
+
+    // Record the deposit in the Records table
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'DEPOSIT', $2, CURRENT_DATE)`,
+      [port_id, amount]
+    );
+
     res.json({ message: "Deposit successful", portfolio: result.rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to deposit cash" });
+  }
+});
+
+// Withdraw cash from portfolio
+app.put("/portfolios/withdraw", async (req, res) => {
+  const { port_name, owner, amount } = req.body;
+  try {
+    // Check if the user is the owner of the portfolio
+    const ownershipCheck = await pool.query(
+      `SELECT port_id, user_id 
+       FROM Portfolios 
+       WHERE port_name = $1 AND user_id = $2`,
+      [port_name, owner]
+    );
+
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
+    }
+
+    const { port_id } = ownershipCheck.rows[0];
+
+    // Update the portfolio's cash balance
+    const result = await pool.query(
+      `UPDATE Portfolios
+       SET cash_dep = cash_dep - $1
+       WHERE port_id = $2
+       RETURNING port_id, port_name, cash_dep, user_id`,
+      [amount, port_id]
+    );
+
+    if (result.rows[0].cash_dep < 0) {
+      return res.status(400).json({ error: "Insufficient funds in portfolio" });
+    }
+
+    // Record the withdrawal in the Records table
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'WITHDRAW', $2, CURRENT_DATE)`,
+      [port_id, amount]
+    );
+
+    res.json({ message: "Withdrawal successful", portfolio: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to withdraw cash" });
   }
 });
 
@@ -168,7 +283,7 @@ app.put("/portfolios/transfer", async (req, res) => {
     const deductResult = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep - $1
-       WHERE port_name = $2 AND username = $3
+       WHERE port_name = $2 AND user_id = $3
        RETURNING port_name, cash_dep`,
       [amount, give_port, owner]
     );
@@ -187,7 +302,7 @@ app.put("/portfolios/transfer", async (req, res) => {
     const addResult = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep + $1
-       WHERE port_name = $2 AND username = $3
+       WHERE port_name = $2 AND user_id = $3
        RETURNING port_name, cash_dep`,
       [amount, get_port, owner]
     );
@@ -212,13 +327,37 @@ app.put("/portfolios/transfer", async (req, res) => {
   }
 });
 
+// Get performance statistics for a portfolio
+
 // -- Stock management --
 
 // Buy a stock for a portfolio
 app.post("/portfolios/stocks/buy", async (req, res) => {
-  const { port_id, stock_symbol, amount } = req.body;
+  const { port_id, stock_symbol, amount, user_id } = req.body;
 
   try {
+    // Check if the user is the owner of the portfolio
+    const ownershipCheck = await pool.query(
+      `SELECT port_id, user_id 
+       FROM Portfolios 
+       WHERE port_id = $1 AND user_id = $2`,
+      [port_id, user_id]
+    );
+
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
+    }
+
+    // Check if the stock exists
+    const stockCheckResult = await pool.query(
+      `SELECT stock_symbol FROM Stocks WHERE stock_symbol = $1`,
+      [stock_symbol]
+    );
+
+    if (stockCheckResult.rows.length === 0) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+
     // Get the close price of the stock
     const priceResult = await pool.query(
       `SELECT close_price
@@ -272,6 +411,13 @@ app.post("/portfolios/stocks/buy", async (req, res) => {
       [port_id, stock_symbol, amount]
     );
 
+    // Record the transaction in the Records table
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'BUY', $2, CURRENT_DATE)`,
+      [port_id, total_cost]
+    );
+
     res.json({
       message: "Stock purchased successfully",
       stock: result.rows[0],
@@ -286,9 +432,21 @@ app.post("/portfolios/stocks/buy", async (req, res) => {
 
 // Sell a stock from a portfolio
 app.delete("/portfolios/stocks/sell", async (req, res) => {
-  const { port_id, stock_symbol, amount } = req.body;
+  const { port_id, stock_symbol, amount, user_id } = req.body;
 
   try {
+    // Check if the user is the owner of the portfolio
+    const ownershipCheck = await pool.query(
+      `SELECT port_id, user_id 
+       FROM Portfolios 
+       WHERE port_id = $1 AND user_id = $2`,
+      [port_id, user_id]
+    );
+
+    if (ownershipCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
+    }
+
     // Get the close price of the stock
     const priceResult = await pool.query(
       `SELECT close_price
@@ -329,6 +487,13 @@ app.delete("/portfolios/stocks/sell", async (req, res) => {
        SET cash_dep = cash_dep + $1
        WHERE port_id = $2`,
       [total_revenue, port_id]
+    );
+
+    // Record the transaction in the Records table
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'SELL', $2, CURRENT_DATE)`,
+      [port_id, total_revenue]
     );
 
     res.json({
@@ -622,7 +787,8 @@ app.delete("/stocklists/:list_id/stocks", async (req, res) => {
 
 // Share a stock list with another user
 app.post("/stocklists/:list_id/share", async (req, res) => {
-  const { list_id, username } = req.body;
+  const { list_id, username, current_user } = req.body; // Include `current_user` in the request body
+
   try {
     // Retrieve the user_id for the given username
     const userResult = await pool.query(
@@ -631,14 +797,26 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ error: "User to share with not found" });
     }
 
     const user_id = userResult.rows[0].id;
 
-    // Check if the stock list exists
+    // Retrieve the user_id for the current user
+    const currentUserResult = await pool.query(
+      `SELECT id FROM Users WHERE username = $1`,
+      [current_user]
+    );
+
+    if (currentUserResult.rows.length === 0) {
+      return res.status(404).json({ error: "Current user not found" });
+    }
+
+    const current_user_id = currentUserResult.rows[0].id;
+
+    // Check if the stock list exists and belongs to the current user
     const listResult = await pool.query(
-      `SELECT 1 FROM StockLists WHERE list_id = $1`,
+      `SELECT user_id, visibility FROM StockLists WHERE list_id = $1`,
       [list_id]
     );
 
@@ -646,21 +824,32 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
       return res.status(404).json({ error: "Stock list not found" });
     }
 
-    // Check if the user already has access to the list
+    const { user_id: owner_id, visibility } = listResult.rows[0];
+
+    if (owner_id !== current_user_id) {
+      return res.status(403).json({ error: "You are not authorized to share this stock list" });
+    }
+
+    // If the stock list is public, no need to share explicitly
+    if (visibility === "public") {
+      return res.status(400).json({ error: "This stock list is already public and accessible to all users" });
+    }
+
+    // Check if the user already has access to the stock list
     const accessCheck = await pool.query(
       `SELECT 1 FROM Visibility WHERE list_id = $1 AND user_id = $2`,
       [list_id, user_id]
     );
 
     if (accessCheck.rows.length > 0) {
-      return res.status(409).json({ error: "User already has access to this list" });
+      return res.status(409).json({ error: "User already has access to this stock list" });
     }
 
     // Share the stock list with the user
     const result = await pool.query(
       `INSERT INTO Visibility (list_id, user_id)
-        VALUES ($1, $2)
-        RETURNING list_id, user_id`,
+       VALUES ($1, $2)
+       RETURNING list_id, user_id`,
       [list_id, user_id]
     );
 
@@ -673,7 +862,6 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
     res.status(500).json({ error: "Failed to share stock list" });
   }
 });
-
 // -- Friends management --
 
 // Create or accept a friend request
