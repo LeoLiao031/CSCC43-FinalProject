@@ -136,7 +136,7 @@ export const getStockLists = async (userId: string) => {
   return response.json();
 };
 
-export const deleteStockList = async (listId: string, userId: string) => {
+export const deleteStockList = async (listId: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -155,12 +155,12 @@ export const getSharedStockLists = async (userId: string) => {
   return response.json();
 };
 
-export const getStockListData = async (listId: string) => {
+export const getStockListData = async (listId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists/data/${listId}`);
   return response.json();
 };
 
-export const addStockToList = async (listId: string, stockSymbol: string, quantity: number, userId: string) => {
+export const addStockToList = async (listId: number, stockSymbol: string, quantity: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists/${listId}/stocks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -169,7 +169,7 @@ export const addStockToList = async (listId: string, stockSymbol: string, quanti
   return response.json();
 };
 
-export const removeStockFromList = async (listId: string, stockSymbol: string, userId: string) => {
+export const removeStockFromList = async (listId: number, stockSymbol: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists/${listId}/stocks`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -178,7 +178,7 @@ export const removeStockFromList = async (listId: string, stockSymbol: string, u
   return response.json();
 };
 
-export const shareStockList = async (listId: string, userId: string, currentUserId: string) => {
+export const shareStockList = async (listId: number, userId: number, currentUserId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists/${listId}/share`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

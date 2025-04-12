@@ -17,7 +17,26 @@ interface StockList {
   name: string;
   created_at: string;
   visibility: string;
-  stocks?: string[]; // Optional since it might not be included in the initial response
+  stocks?: string[];
+  creator_name?: string;
+}
+
+interface StockItem {
+  stock_symbol: string;
+  quantity: number;
+  stock_name: string;
+  latest_price: string;
+}
+
+interface DetailedStockList {
+  stockList: {
+    list_id: number;
+    list_name: string;
+    visibility: string;
+    created_at: string;
+    creator_name: string;
+  };
+  stockItems: StockItem[];
 }
 
 export default function StockListsTab({ loginStatus, userId }: StockListsTabProps) {
@@ -31,9 +50,10 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
   const [newStockSymbol, setNewStockSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [expandedList, setExpandedList] = useState<number | null>(null);
-  const [detailedLists, setDetailedLists] = useState<{ [key: number]: StockList }>({});
+  const [detailedLists, setDetailedLists] = useState<{ [key: number]: DetailedStockList }>({});
   const [friends, setFriends] = useState<{ username: string }[]>([]);
   const [selectedFriend, setSelectedFriend] = useState("");
+  const [newStockQuantity, setNewStockQuantity] = useState<number>(1);
 
   useEffect(() => {
     if (loginStatus) {
@@ -103,7 +123,7 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
 
   const handleDeleteList = async (listId: number) => {
     try {
-      const response = await deleteStockList(listId.toString(), userId.toString());
+      const response = await deleteStockList(listId, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -122,14 +142,20 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
       return;
     }
 
+    if (newStockQuantity <= 0) {
+      setError("Quantity must be greater than 0");
+      return;
+    }
+
     try {
-      const response = await addStockToList(selectedList.list_id.toString(), newStockSymbol, 1, userId.toString());
+      const response = await addStockToList(selectedList.list_id, newStockSymbol, newStockQuantity, userId);
       if (response.error) {
         setError(response.error);
         return;
       }
       setSuccess(`Successfully added ${newStockSymbol} to ${selectedList.name}`);
       setNewStockSymbol("");
+      setNewStockQuantity(1);
       await fetchDetailedList(selectedList.list_id);
       fetchStockLists();
     } catch (error) {
@@ -140,7 +166,7 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
 
   const handleRemoveStock = async (listId: number, stockSymbol: string) => {
     try {
-      const response = await removeStockFromList(listId.toString(), stockSymbol, userId.toString());
+      const response = await removeStockFromList(listId, stockSymbol, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -161,7 +187,7 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
     }
 
     try {
-      const response = await shareStockList(listId.toString(), selectedFriend, userId.toString());
+      const response = await shareStockList(listId, selectedFriend, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -194,7 +220,7 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
 
   const fetchDetailedList = async (listId: number) => {
     try {
-      const response = await getStockListData(listId.toString());
+      const response = await getStockListData(listId);
       if (response.error) {
         setError(response.error);
         return;
@@ -378,8 +404,8 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                             Stocks in List:
                           </Typography>
                           {(() => {
-                            const stocks = detailedLists[list.list_id]?.stocks;
-                            if (!stocks || stocks.length === 0) {
+                            const detailedList = detailedLists[list.list_id];
+                            if (!detailedList?.stockItems || detailedList.stockItems.length === 0) {
                               return (
                                 <Typography variant="body2" color="text.secondary">
                                   No stocks in this list
@@ -388,19 +414,32 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                             }
                             return (
                               <List>
-                                {stocks.map((stock) => (
+                                {detailedList.stockItems.map((stock) => (
                                   <ListItem
-                                    key={stock}
+                                    key={stock.stock_symbol}
                                     secondaryAction={
                                       <IconButton
                                         edge="end"
-                                        onClick={() => handleRemoveStock(list.list_id, stock)}
+                                        onClick={() => handleRemoveStock(list.list_id, stock.stock_symbol)}
                                       >
                                         <DeleteIcon />
                                       </IconButton>
                                     }
                                   >
-                                    <ListItemText primary={stock} />
+                                    <ListItemText 
+                                      primary={stock.stock_symbol}
+                                      secondary={
+                                        <>
+                                          <Typography variant="body2" component="span">
+                                            {stock.stock_name}
+                                          </Typography>
+                                          <br />
+                                          <Typography variant="body2" component="span">
+                                            Quantity: {stock.quantity} | Latest Price: ${stock.latest_price}
+                                          </Typography>
+                                        </>
+                                      }
+                                    />
                                   </ListItem>
                                 ))}
                               </List>
@@ -413,6 +452,15 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                             label="Stock Symbol"
                             value={newStockSymbol}
                             onChange={(e) => setNewStockSymbol(e.target.value.toUpperCase())}
+                          />
+                          <TextField
+                            size="small"
+                            label="Quantity"
+                            type="number"
+                            value={newStockQuantity}
+                            onChange={(e) => setNewStockQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                            inputProps={{ min: 1 }}
+                            sx={{ width: '100px' }}
                           />
                           <Button
                             variant="contained"
@@ -469,7 +517,7 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                     }}>
                       <Typography variant="h6">{list.name}</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                        by {list.user_id}
+                        by {detailedLists[list.list_id]?.stockList?.creator_name || list.user_id}
                       </Typography>
                     </Box>
                   </AccordionSummary>
@@ -484,8 +532,8 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                             Stocks in List:
                           </Typography>
                           {(() => {
-                            const stocks = detailedLists[list.list_id]?.stocks;
-                            if (!stocks || stocks.length === 0) {
+                            const detailedList = detailedLists[list.list_id];
+                            if (!detailedList?.stockItems || detailedList.stockItems.length === 0) {
                               return (
                                 <Typography variant="body2" color="text.secondary">
                                   No stocks in this list
@@ -494,9 +542,22 @@ export default function StockListsTab({ loginStatus, userId }: StockListsTabProp
                             }
                             return (
                               <List>
-                                {stocks.map((stock) => (
-                                  <ListItem key={stock}>
-                                    <ListItemText primary={stock} />
+                                {detailedList.stockItems.map((stock) => (
+                                  <ListItem key={stock.stock_symbol}>
+                                    <ListItemText 
+                                      primary={stock.stock_symbol}
+                                      secondary={
+                                        <>
+                                          <Typography variant="body2" component="span">
+                                            {stock.stock_name}
+                                          </Typography>
+                                          <br />
+                                          <Typography variant="body2" component="span">
+                                            Quantity: {stock.quantity} | Latest Price: ${stock.latest_price}
+                                          </Typography>
+                                        </>
+                                      }
+                                    />
                                   </ListItem>
                                 ))}
                               </List>
