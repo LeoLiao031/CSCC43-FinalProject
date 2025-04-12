@@ -1254,6 +1254,12 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
       return res.status(409).json({ error: "User already has access to this stock list" });
     }
 
+    // Update the visibility to "shared"
+    await pool.query(
+      `UPDATE StockLists SET visibility = 'shared' WHERE list_id = $1`,
+      [list_id]
+    );
+
     // Share the stock list with the user
     const result = await pool.query(
       `INSERT INTO Visibility (list_id, user_id)
