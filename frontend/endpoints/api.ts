@@ -178,11 +178,11 @@ export const removeStockFromList = async (listId: number, stockSymbol: string, u
   return response.json();
 };
 
-export const shareStockList = async (listId: number, userId: number, currentUserId: number) => {
+export const shareStockList = async (listId: number, username: string, currentUserId: number) => {
   const response = await fetch(`${API_BASE_URL}/stocklists/${listId}/share`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ list_id: listId, user_id: userId, current_user_id: currentUserId }),
+    body: JSON.stringify({ list_id: listId, username, current_user_id: currentUserId }),
   });
   return response.json();
 };

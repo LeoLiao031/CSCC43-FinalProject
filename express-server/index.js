@@ -1102,7 +1102,7 @@ app.get("/stocklists/shared/:user_id", async (req, res) => {
       `SELECT sl.list_id, sl.name, sl.created_at, sl.visibility, u.username AS owner
        FROM StockLists sl
        JOIN Users u ON sl.user_id = u.id
-       WHERE sl.visibility = 'private' AND sl.list_id IN (
+       WHERE sl.visibility = 'shared' AND sl.list_id IN (
          SELECT list_id FROM Visibility WHERE user_id = $1
        )
        ORDER BY sl.name ASC`,
@@ -1257,7 +1257,7 @@ app.delete("/stocklists/:list_id/stocks", async (req, res) => {
 
 // Share a stock list with another user *
 app.post("/stocklists/:list_id/share", async (req, res) => {
-  const { list_id, user_id, current_user_id } = req.body;
+  const { list_id, username, current_user_id } = req.body;
 
   try {
     // Check if the stock list exists and belongs to the current user
@@ -1280,6 +1280,18 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
     if (visibility === "public") {
       return res.status(400).json({ error: "This stock list is already public and accessible to all users" });
     }
+
+    // Get the user_id for the username
+    const userResult = await pool.query(
+      `SELECT id FROM Users WHERE username = $1`,
+      [username]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user_id = userResult.rows[0].id;
 
     // Check if the user already has access to the stock list
     const accessCheck = await pool.query(

@@ -234,12 +234,18 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
     }
 
     try {
-      const response = await shareStockList(selectedListForSharing.list_id, selectedFriend, userId);
+      const friend = friends.find(f => f.user_id === selectedFriend);
+      if (!friend) {
+        setError("Selected friend not found");
+        return;
+      }
+
+      const response = await shareStockList(selectedListForSharing.list_id, friend.friend_username, userId);
       if (response.error) {
         setError(response.error);
         return;
       }
-      setSuccess(`Successfully shared list with ${friends.find(f => f.user_id === selectedFriend)?.friend_username}`);
+      setSuccess(`Successfully shared list with ${friend.friend_username}`);
       
       // Update the visibility of the shared list
       setStockLists(prevLists => 
