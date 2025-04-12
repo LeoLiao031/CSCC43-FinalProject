@@ -327,11 +327,10 @@ app.put("/portfolios/withdraw", async (req, res) => {
 
     if (result.rows[0].cash_dep < 0) {
     // Update the portfolio's cash balance back up
-    const result = await pool.query(
+    await pool.query(
         `UPDATE Portfolios
         SET cash_dep = cash_dep + $1
-        WHERE port_id = $2
-        RETURNING port_id, port_name, cash_dep, user_id`,
+        WHERE port_id = $2`,
         [amount, port_id]
         );
       return res.status(400).json({ error: "Insufficient funds in portfolio" });
@@ -570,7 +569,23 @@ app.delete("/portfolios/stocks/sell", async (req, res) => {
     }
 
     if (result.rows[0].quantity < 0) {
+      // Rollback the update
+      await pool.query(
+        `UPDATE Stockholdings
+         SET quantity = quantity + $1
+         WHERE port_id = $2 AND stock_symbol = $3`,
+        [amount, port_id, stock_symbol]
+      );
       return res.status(400).json({ error: "Insufficient stock quantity" });
+    }
+    console.log(result.rows[0].quantity);
+    // If quantity is 0, delete the holding
+    if (result.rows[0].quantity < 1) {
+      await pool.query(
+        `DELETE FROM Stockholdings
+         WHERE port_id = $1 AND stock_symbol = $2`,
+        [port_id, stock_symbol]
+      );
     }
 
     // Add the total revenue to the portfolio's cash

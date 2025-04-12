@@ -1,17 +1,26 @@
 "use client";
 import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
 interface PortfolioTabProps {
   loginStatus: boolean;
   username: string;
   userId: number;
+}
+
+interface StockHolding {
+  stock_symbol: string | null;
+  quantity: number | null;
+  close_price: number | null;
+  stock_value: number | null;
 }
 
 interface Portfolio {
@@ -20,6 +29,7 @@ interface Portfolio {
   cash_dep: number;
   stocks_value: number;
   total_value: number;
+  stock_holdings: StockHolding[];
 }
 
 export default function PortfolioTab({ loginStatus, username, userId }: PortfolioTabProps) {
@@ -37,6 +47,14 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
   const [transferAmount, setTransferAmount] = useState("");
   const [targetPortfolio, setTargetPortfolio] = useState<Portfolio | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedPortfolioForBuy, setSelectedPortfolioForBuy] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForSell, setSelectedPortfolioForSell] = useState<Portfolio | null>(null);
+  const [buyStockSymbol, setBuyStockSymbol] = useState("");
+  const [buyQuantity, setBuyQuantity] = useState("");
+  const [sellStockSymbol, setSellStockSymbol] = useState("");
+  const [sellQuantity, setSellQuantity] = useState("");
+  const [expandedPortfolio, setExpandedPortfolio] = useState<number | null>(null);
+  const [detailedPortfolios, setDetailedPortfolios] = useState<{ [key: number]: Portfolio }>({});
 
   useEffect(() => {
     if (loginStatus && username) {
@@ -192,6 +210,90 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
     }
   };
 
+  const handleBuyStock = async (portfolioId: number) => {
+    const quantity = parseInt(buyQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setError("Please enter a valid quantity");
+      return;
+    }
+
+    if (!buyStockSymbol.trim()) {
+      setError("Please enter a valid stock symbol");
+      return;
+    }
+
+    try {
+      const response = await buyStock(portfolioId, buyStockSymbol, quantity, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully bought ${quantity} shares of ${buyStockSymbol}`);
+      setBuyStockSymbol("");
+      setBuyQuantity("");
+      setSelectedPortfolioForBuy(null);
+      await fetchDetailedPortfolio(portfolioId);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to buy stock");
+    }
+  };
+
+  const handleSellStock = async (portfolioId: number) => {
+    const quantity = parseInt(sellQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setError("Please enter a valid quantity");
+      return;
+    }
+
+    if (!sellStockSymbol.trim()) {
+      setError("Please enter a valid stock symbol");
+      return;
+    }
+
+    try {
+      const response = await sellStock(portfolioId, sellStockSymbol, quantity, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully sold ${quantity} shares of ${sellStockSymbol}`);
+      setSellStockSymbol("");
+      setSellQuantity("");
+      setSelectedPortfolioForSell(null);
+      await fetchDetailedPortfolio(portfolioId);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to sell stock");
+    }
+  };
+
+  const fetchDetailedPortfolio = async (portfolioId: number) => {
+    try {
+      const response = await getPortfolioInfo(portfolioId, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setDetailedPortfolios(prev => ({
+        ...prev,
+        [portfolioId]: response
+      }));
+    } catch (error) {
+      console.error('Error fetching detailed portfolio:', error);
+      setError("Failed to fetch portfolio details");
+    }
+  };
+
+  const handleAccordionChange = (portfolioId: number) => (event: React.SyntheticEvent, isExpanded: boolean) => {
+    setExpandedPortfolio(isExpanded ? portfolioId : null);
+    if (isExpanded && !detailedPortfolios[portfolioId]) {
+      fetchDetailedPortfolio(portfolioId);
+    }
+  };
+
   if (!loginStatus) {
     return (
       <Box sx={{ p: 3 }}>
@@ -318,6 +420,8 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                     display: 'none',
                   },
                 }}
+                expanded={expandedPortfolio === portfolio.port_id}
+                onChange={handleAccordionChange(portfolio.port_id)}
               >
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon />}
@@ -347,6 +451,44 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                       <Typography variant="body2">
                         Total Value: ${portfolio.total_value}
                       </Typography>
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                          Stock Holdings:
+                        </Typography>
+                        {detailedPortfolios[portfolio.port_id]?.stock_holdings?.length > 0 ? (
+                          detailedPortfolios[portfolio.port_id].stock_holdings.map((holding, index) => (
+                            holding.stock_symbol && (
+                              <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                                <Typography variant="body2">
+                                  {holding.stock_symbol}: {holding.quantity} shares @ ${holding.close_price} (${holding.stock_value})
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    setSelectedPortfolioForSell(portfolio);
+                                    setSellStockSymbol(holding.stock_symbol || "");
+                                  }}
+                                >
+                                  <TrendingDownIcon />
+                                </IconButton>
+                              </Box>
+                            )
+                          ))
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            No stocks in this portfolio
+                          </Typography>
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                        <Button
+                          variant="contained"
+                          startIcon={<TrendingUpIcon />}
+                          onClick={() => setSelectedPortfolioForBuy(portfolio)}
+                        >
+                          Buy Stock
+                        </Button>
+                      </Box>
                     </Box>
                   </Box>
                 </AccordionDetails>
@@ -447,6 +589,66 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
           <Button onClick={handleTransfer}>Transfer</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Buy Stock Dialog */}
+      {selectedPortfolioForBuy && (
+        <Dialog open={!!selectedPortfolioForBuy} onClose={() => setSelectedPortfolioForBuy(null)}>
+          <DialogTitle>Buy Stock for {selectedPortfolioForBuy.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Stock Symbol"
+              fullWidth
+              value={buyStockSymbol}
+              onChange={(e) => setBuyStockSymbol(e.target.value.toUpperCase())}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="dense"
+              label="Quantity"
+              type="number"
+              fullWidth
+              value={buyQuantity}
+              onChange={(e) => setBuyQuantity(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForBuy(null)}>Cancel</Button>
+            <Button onClick={() => handleBuyStock(selectedPortfolioForBuy.port_id)}>Buy</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Sell Stock Dialog */}
+      {selectedPortfolioForSell && (
+        <Dialog open={!!selectedPortfolioForSell} onClose={() => setSelectedPortfolioForSell(null)}>
+          <DialogTitle>Sell Stock from {selectedPortfolioForSell.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Stock Symbol"
+              fullWidth
+              value={sellStockSymbol}
+              onChange={(e) => setSellStockSymbol(e.target.value.toUpperCase())}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="dense"
+              label="Quantity"
+              type="number"
+              fullWidth
+              value={sellQuantity}
+              onChange={(e) => setSellQuantity(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForSell(null)}>Cancel</Button>
+            <Button onClick={() => handleSellStock(selectedPortfolioForSell.port_id)}>Sell</Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 } 

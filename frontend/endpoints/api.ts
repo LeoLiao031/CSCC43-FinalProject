@@ -44,7 +44,7 @@ export const getPortfolios = async (userId: number) => {
   return response.json();
 };
 
-export const getPortfolioInfo = async (portId: string, userId: string) => {
+export const getPortfolioInfo = async (portId: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/${portId}/${userId}`);
   return response.json();
 };
@@ -77,7 +77,7 @@ export const transferCash = async (givePortId: number, getPortId: number, owner:
 };
 
 // Stock Management
-export const buyStock = async (portId: string, stockSymbol: string, amount: number, userId: string) => {
+export const buyStock = async (portId: number, stockSymbol: string, amount: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/stocks/buy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -86,7 +86,7 @@ export const buyStock = async (portId: string, stockSymbol: string, amount: numb
   return response.json();
 };
 
-export const sellStock = async (portId: string, stockSymbol: string, amount: number, userId: string) => {
+export const sellStock = async (portId: number, stockSymbol: string, amount: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/stocks/sell`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
