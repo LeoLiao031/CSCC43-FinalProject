@@ -808,7 +808,7 @@ app.get("/stockhistory", async (req, res) => {
     let query = `
       SELECT *
       FROM StockHistory
-      WHERE timestamp BETWEEN $1 AND $2
+      WHERE timestamp BETWEEN $1 AND $2 AND isHistory = TRUE
     `;
     const params = [start_date, end_date];
 
