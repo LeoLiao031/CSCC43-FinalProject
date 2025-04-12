@@ -1,7 +1,7 @@
 "use client";
-import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
+import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo, getStockHistory } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -9,6 +9,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import TableChartIcon from '@mui/icons-material/TableChart';
 
 interface PortfolioTabProps {
   loginStatus: boolean;
@@ -30,6 +31,15 @@ interface Portfolio {
   stocks_value: number;
   total_value: number;
   stock_holdings: StockHolding[];
+}
+
+interface StockHistoryData {
+  timestamp: string;
+  open_price: number;
+  high_price: number;
+  low_price: number;
+  close_price: number;
+  volume: number;
 }
 
 export default function PortfolioTab({ loginStatus, username, userId }: PortfolioTabProps) {
@@ -55,6 +65,11 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
   const [sellQuantity, setSellQuantity] = useState("");
   const [expandedPortfolio, setExpandedPortfolio] = useState<number | null>(null);
   const [detailedPortfolios, setDetailedPortfolios] = useState<{ [key: number]: Portfolio }>({});
+  const [selectedStock, setSelectedStock] = useState<{ symbol: string; portfolioId: number } | null>(null);
+  const [stockHistory, setStockHistory] = useState<StockHistoryData[]>([]);
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [isLoadingStockHistory, setIsLoadingStockHistory] = useState(false);
 
   useEffect(() => {
     if (loginStatus && username) {
@@ -294,6 +309,39 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
     }
   };
 
+  const handleOpenStockDialog = (symbol: string, portfolioId: number) => {
+    setSelectedStock({ symbol, portfolioId });
+    setStartDate("");
+    setEndDate("");
+    setStockHistory([]);
+  };
+
+  const handleCloseStockDialog = () => {
+    setSelectedStock(null);
+    setStartDate("");
+    setEndDate("");
+    setStockHistory([]);
+  };
+
+  const handleFetchStockHistory = async () => {
+    if (!selectedStock || !startDate || !endDate) return;
+
+    setIsLoadingStockHistory(true);
+    try {
+      const response = await getStockHistory(selectedStock.symbol, startDate, endDate);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setStockHistory(response || []);
+    } catch (error) {
+      console.error('Error fetching stock history:', error);
+      setError("Failed to fetch stock history");
+    } finally {
+      setIsLoadingStockHistory(false);
+    }
+  };
+
   if (!loginStatus) {
     return (
       <Box sx={{ p: 3 }}>
@@ -462,15 +510,23 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                                 <Typography variant="body2">
                                   {holding.stock_symbol}: {holding.quantity} shares @ ${holding.close_price} (${holding.stock_value})
                                 </Typography>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => {
-                                    setSelectedPortfolioForSell(portfolio);
-                                    setSellStockSymbol(holding.stock_symbol || "");
-                                  }}
-                                >
-                                  <TrendingDownIcon />
-                                </IconButton>
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleOpenStockDialog(holding.stock_symbol || "", portfolio.port_id)}
+                                  >
+                                    <TableChartIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      setSelectedPortfolioForSell(portfolio);
+                                      setSellStockSymbol(holding.stock_symbol || "");
+                                    }}
+                                  >
+                                    <TrendingDownIcon />
+                                  </IconButton>
+                                </Box>
                               </Box>
                             )
                           ))
@@ -649,6 +705,80 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
           </DialogActions>
         </Dialog>
       )}
+
+      {/* Stock History Dialog */}
+      <Dialog 
+        open={!!selectedStock} 
+        onClose={handleCloseStockDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Stock History for {selectedStock?.symbol}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
+            <TextField
+              type="date"
+              label="Start Date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              type="date"
+              label="End Date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ flex: 1 }}
+            />
+          </Box>
+          {isLoadingStockHistory ? (
+            <Typography>Loading stock history...</Typography>
+          ) : stockHistory.length > 0 ? (
+            <TableContainer component={Paper}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Date</TableCell>
+                    <TableCell align="right">Open</TableCell>
+                    <TableCell align="right">High</TableCell>
+                    <TableCell align="right">Low</TableCell>
+                    <TableCell align="right">Close</TableCell>
+                    <TableCell align="right">Volume</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {stockHistory.map((data, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{new Date(data.timestamp).toLocaleDateString()}</TableCell>
+                      <TableCell align="right">${data.open_price}</TableCell>
+                      <TableCell align="right">${data.high_price}</TableCell>
+                      <TableCell align="right">${data.low_price}</TableCell>
+                      <TableCell align="right">${data.close_price}</TableCell>
+                      <TableCell align="right">{data.volume}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : startDate && endDate ? (
+            <Typography>No data available for the selected date range</Typography>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseStockDialog}>Close</Button>
+          <Button 
+            onClick={handleFetchStockHistory}
+            variant="contained"
+            disabled={!startDate || !endDate || isLoadingStockHistory}
+          >
+            Fetch History
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 } 

@@ -328,3 +328,25 @@ export const denyFriendRequest = async (requesterUsername: string, receiverUsern
   });
   return response.json();
 };
+
+export const getStockHistory = async (stockSymbol: string, startDate: string, endDate: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stockhistory?stock_symbol=${stockSymbol}&start_date=${startDate}&end_date=${endDate}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { error: errorData.error || 'Failed to fetch stock history' };
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching stock history:', error);
+    return { error: 'Failed to fetch stock history' };
+  }
+};
