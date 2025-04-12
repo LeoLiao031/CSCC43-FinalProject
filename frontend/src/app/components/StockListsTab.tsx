@@ -5,7 +5,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ShareIcon from '@mui/icons-material/Share';
-import { createStockList, deleteStockList, getStockLists, addStockToList, removeStockFromList, getStockListData, getFriendsList, shareStockList, getPublicStockLists, getSharedStockLists } from "../../../endpoints/api";
+import { createStockList, deleteStockList, getStockLists, addStockToList, removeStockFromList, getStockListData, getStockListStatistics, getFriendsList, shareStockList, getPublicStockLists, getSharedStockLists } from "../../../endpoints/api";
 
 interface StockListsTabProps {
   loginStatus: boolean;
@@ -30,6 +30,19 @@ interface StockItem {
   latest_price: string;
 }
 
+interface StockStatistics {
+  stock_symbol: string;
+  coefficient_of_variation: string;
+  beta: number;
+}
+
+interface CovarianceCorrelation {
+  stock1: string;
+  stock2: string;
+  covariance: number;
+  correlation: number;
+}
+
 interface DetailedStockList {
   stockList: {
     list_id: number;
@@ -39,6 +52,8 @@ interface DetailedStockList {
     creator_name: string;
   };
   stockItems: StockItem[];
+  stockStatistics?: StockStatistics[];
+  covarianceCorrelationMatrix?: CovarianceCorrelation[];
 }
 
 interface Friend {
@@ -64,6 +79,9 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
   const [newStockQuantity, setNewStockQuantity] = useState<number>(1);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedListForSharing, setSelectedListForSharing] = useState<StockList | null>(null);
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
 
   useEffect(() => {
     if (loginStatus) {
@@ -281,18 +299,59 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
 
   const fetchDetailedList = async (listId: number) => {
     try {
-      const response = await getStockListData(listId);
-      if (response.error) {
-        setError(response.error);
+      const listResponse = await getStockListData(listId);
+      if (listResponse.error) {
+        setError(listResponse.error);
         return;
       }
+
       setDetailedLists(prev => ({
         ...prev,
-        [listId]: response
+        [listId]: {
+          ...listResponse,
+          stockStatistics: undefined,
+          covarianceCorrelationMatrix: undefined
+        }
       }));
     } catch (error) {
       console.error('Error fetching detailed list:', error);
       setError("Failed to fetch list details");
+    }
+  };
+
+  const fetchStatistics = async (listId: number) => {
+    if (!startDate || !endDate) {
+      setError("Please select both start and end dates");
+      return;
+    }
+
+    setIsLoadingStats(true);
+    try {
+      const statsResponse = await getStockListStatistics(
+        listId,
+        userId,
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+
+      if (statsResponse.error) {
+        setError(statsResponse.error);
+        return;
+      }
+
+      setDetailedLists(prev => ({
+        ...prev,
+        [listId]: {
+          ...prev[listId],
+          stockStatistics: statsResponse.stockStatistics,
+          covarianceCorrelationMatrix: statsResponse.covarianceCorrelationMatrix
+        }
+      }));
+    } catch (error) {
+      console.error('Error fetching statistics:', error);
+      setError("Failed to fetch statistics");
+    } finally {
+      setIsLoadingStats(false);
     }
   };
 
@@ -490,6 +549,102 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
                             );
                           })()}
                         </Box>
+
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="h6" sx={{ mb: 2 }}>
+                            Stock Statistics
+                          </Typography>
+                          
+                          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                            <TextField
+                              label="Start Date"
+                              type="date"
+                              value={startDate ? startDate.toISOString().split('T')[0] : ''}
+                              onChange={(e) => setStartDate(new Date(e.target.value))}
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                            />
+                            <TextField
+                              label="End Date"
+                              type="date"
+                              value={endDate ? endDate.toISOString().split('T')[0] : ''}
+                              onChange={(e) => setEndDate(new Date(e.target.value))}
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                            />
+                            <Button
+                              variant="contained"
+                              onClick={() => fetchStatistics(list.list_id)}
+                              disabled={!startDate || !endDate || isLoadingStats}
+                            >
+                              {isLoadingStats ? 'Loading...' : 'Calculate Statistics'}
+                            </Button>
+                          </Box>
+
+                          {(() => {
+                            const detailedList = detailedLists[list.list_id];
+                            if (detailedList?.stockStatistics && detailedList.stockStatistics.length > 0) {
+                              return (
+                                <List>
+                                  {detailedList.stockStatistics.map((stat) => (
+                                    <ListItem key={stat.stock_symbol}>
+                                      <ListItemText
+                                        primary={stat.stock_symbol}
+                                        secondary={
+                                          <>
+                                            <Typography variant="body2" component="span">
+                                              Coefficient of Variation: {parseFloat(stat.coefficient_of_variation).toFixed(4)}
+                                            </Typography>
+                                            <br />
+                                            <Typography variant="body2" component="span">
+                                              Beta: {stat.beta.toFixed(4)}
+                                            </Typography>
+                                          </>
+                                        }
+                                      />
+                                    </ListItem>
+                                  ))}
+                                </List>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {(() => {
+                            const detailedList = detailedLists[list.list_id];
+                            if (detailedList?.covarianceCorrelationMatrix && detailedList.covarianceCorrelationMatrix.length > 0) {
+                              return (
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="h6" sx={{ mb: 2 }}>
+                                    Covariance & Correlation Matrix
+                                  </Typography>
+                                  <List>
+                                    {detailedList.covarianceCorrelationMatrix.map((matrix, index) => (
+                                      <ListItem key={index}>
+                                        <ListItemText
+                                          primary={`${matrix.stock1} - ${matrix.stock2}`}
+                                          secondary={
+                                            <>
+                                              <Typography variant="body2" component="span">
+                                                Covariance: {matrix.covariance.toFixed(6)}
+                                              </Typography>
+                                              <br />
+                                              <Typography variant="body2" component="span">
+                                                Correlation: {matrix.correlation.toFixed(4)}
+                                              </Typography>
+                                            </>
+                                          }
+                                        />
+                                      </ListItem>
+                                    ))}
+                                  </List>
+                                </Box>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </Box>
+
                         <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                           <TextField
                             size="small"

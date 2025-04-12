@@ -187,8 +187,13 @@ export const shareStockList = async (listId: number, username: string, currentUs
   return response.json();
 };
 
-export const getStockListStatistics = async (listId: string, userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/stocklist/${listId}/statistics?user_id=${userId}`);
+export const getStockListStatistics = async (listId: number, userId: number, startDate?: string, endDate?: string) => {
+  const url = new URL(`${API_BASE_URL}/stocklists/${listId}/statistics`);
+  url.searchParams.append('user_id', userId.toString());
+  if (startDate) url.searchParams.append('start_date', startDate);
+  if (endDate) url.searchParams.append('end_date', endDate);
+  
+  const response = await fetch(url.toString());
   return response.json();
 };
 
