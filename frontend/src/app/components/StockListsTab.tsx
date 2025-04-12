@@ -770,6 +770,136 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
                             );
                           })()}
                         </Box>
+
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="h6" sx={{ mb: 2 }}>
+                            Stock Statistics
+                          </Typography>
+                          
+                          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                            <TextField
+                              label="Start Date"
+                              type="date"
+                              value={startDate ? startDate.toISOString().split('T')[0] : ''}
+                              onChange={(e) => setStartDate(new Date(e.target.value))}
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                            />
+                            <TextField
+                              label="End Date"
+                              type="date"
+                              value={endDate ? endDate.toISOString().split('T')[0] : ''}
+                              onChange={(e) => setEndDate(new Date(e.target.value))}
+                              InputLabelProps={{ shrink: true }}
+                              size="small"
+                            />
+                            <Button
+                              variant="contained"
+                              onClick={() => fetchStatistics(list.list_id)}
+                              disabled={!startDate || !endDate || isLoadingStats}
+                            >
+                              {isLoadingStats ? 'Loading...' : 'Calculate Statistics'}
+                            </Button>
+                          </Box>
+
+                          {(() => {
+                            const detailedList = detailedLists[list.list_id];
+                            if (detailedList?.stockStatistics && detailedList.stockStatistics.length > 0) {
+                              return (
+                                <List>
+                                  {detailedList.stockStatistics.map((stat) => (
+                                    <ListItem key={stat.stock_symbol}>
+                                      <ListItemText
+                                        primary={stat.stock_symbol}
+                                        secondary={
+                                          <>
+                                            <Typography variant="body2" component="span">
+                                              Coefficient of Variation: {parseFloat(stat.coefficient_of_variation).toFixed(4)}
+                                            </Typography>
+                                            <br />
+                                            <Typography variant="body2" component="span">
+                                              Beta: {stat.beta.toFixed(4)}
+                                            </Typography>
+                                          </>
+                                        }
+                                      />
+                                    </ListItem>
+                                  ))}
+                                </List>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          {(() => {
+                            const detailedList = detailedLists[list.list_id];
+                            if (detailedList?.covarianceCorrelationMatrix && detailedList.covarianceCorrelationMatrix.length > 0) {
+                              return (
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="h6" sx={{ mb: 2 }}>
+                                    Covariance & Correlation Matrix
+                                  </Typography>
+                                  <List>
+                                    {detailedList.covarianceCorrelationMatrix.map((matrix, index) => (
+                                      <ListItem key={index}>
+                                        <ListItemText
+                                          primary={`${matrix.stock1} - ${matrix.stock2}`}
+                                          secondary={
+                                            <>
+                                              <Typography variant="body2" component="span">
+                                                Covariance: {matrix.covariance.toFixed(6)}
+                                              </Typography>
+                                              <br />
+                                              <Typography variant="body2" component="span">
+                                                Correlation: {matrix.correlation.toFixed(4)}
+                                              </Typography>
+                                            </>
+                                          }
+                                        />
+                                      </ListItem>
+                                    ))}
+                                  </List>
+                                </Box>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </Box>
+
+                        <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                          <TextField
+                            size="small"
+                            label="Stock Symbol"
+                            value={newStockSymbol}
+                            onChange={(e) => setNewStockSymbol(e.target.value.toUpperCase())}
+                          />
+                          <TextField
+                            size="small"
+                            label="Quantity"
+                            type="number"
+                            value={newStockQuantity}
+                            onChange={(e) => setNewStockQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                            inputProps={{ min: 1 }}
+                            sx={{ width: '100px' }}
+                          />
+                          <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => {
+                              setSelectedList(list);
+                              handleAddStock();
+                            }}
+                          >
+                            Add Stock
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            startIcon={<ShareIcon />}
+                            onClick={() => handleShareDialogOpen(list)}
+                          >
+                            Share
+                          </Button>
+                        </Box>
                       </Box>
                     </Box>
                   </AccordionDetails>
