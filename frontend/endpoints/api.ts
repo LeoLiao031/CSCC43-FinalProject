@@ -310,3 +310,16 @@ export const getReviews = async (userId: number) => {
   const response = await fetch(`${API_BASE_URL}/reviews/${userId}`);
   return response.json();
 };
+
+// Deny a friend request
+export const denyFriendRequest = async (requesterUsername: string, receiverUsername: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/deny`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      req_friend_name: requesterUsername,
+      rec_friend_name: receiverUsername
+    }),
+  });
+  return response.json();
+};
