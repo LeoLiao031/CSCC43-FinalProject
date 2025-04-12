@@ -316,7 +316,7 @@ app.put("/portfolios/withdraw", async (req, res) => {
       return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
     }
 
-    // Update the portfolio's cash balance
+    // Update the portfolio's cash balance down
     const result = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep - $1
@@ -326,6 +326,14 @@ app.put("/portfolios/withdraw", async (req, res) => {
     );
 
     if (result.rows[0].cash_dep < 0) {
+    // Update the portfolio's cash balance back up
+    const result = await pool.query(
+        `UPDATE Portfolios
+        SET cash_dep = cash_dep + $1
+        WHERE port_id = $2
+        RETURNING port_id, port_name, cash_dep, user_id`,
+        [amount, port_id]
+        );
       return res.status(400).json({ error: "Insufficient funds in portfolio" });
     }
 

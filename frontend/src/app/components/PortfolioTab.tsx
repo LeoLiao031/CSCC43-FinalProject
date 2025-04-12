@@ -1,10 +1,11 @@
 "use client";
 import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 interface PortfolioTabProps {
@@ -29,7 +30,9 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
   const [success, setSuccess] = useState("");
   const [selectedPortfolioForDeposit, setSelectedPortfolioForDeposit] = useState<Portfolio | null>(null);
   const [selectedPortfolioForTransfer, setSelectedPortfolioForTransfer] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForWithdraw, setSelectedPortfolioForWithdraw] = useState<Portfolio | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState("");
   const [targetPortfolio, setTargetPortfolio] = useState<Portfolio | null>(null);
@@ -126,6 +129,29 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
     } catch (error) {
       console.error('Error:', error);
       setError("Failed to deposit cash");
+    }
+  };
+
+  const handleWithdraw = async (portfolioId: number) => {
+    const amount = parseFloat(withdrawAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid withdrawal amount");
+      return;
+    }
+
+    try {
+      const response = await withdrawCash(portfolioId, userId, amount);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully withdrew $${amount}`);
+      setWithdrawAmount("");
+      setSelectedPortfolioForWithdraw(null);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to withdraw cash");
     }
   };
 
@@ -264,6 +290,12 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                   </IconButton>
                   <IconButton
                     size="small"
+                    onClick={() => setSelectedPortfolioForWithdraw(portfolio)}
+                  >
+                    <RemoveIcon />
+                  </IconButton>
+                  <IconButton
+                    size="small"
                     onClick={() => {
                       setSelectedPortfolioForTransfer(portfolio);
                       setTransferDialogOpen(true);
@@ -342,6 +374,28 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
           <DialogActions>
             <Button onClick={() => setSelectedPortfolioForDeposit(null)}>Cancel</Button>
             <Button onClick={() => handleDeposit(selectedPortfolioForDeposit.port_id)}>Deposit</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Withdraw Dialog */}
+      {selectedPortfolioForWithdraw && (
+        <Dialog open={!!selectedPortfolioForWithdraw} onClose={() => setSelectedPortfolioForWithdraw(null)}>
+          <DialogTitle>Withdraw from {selectedPortfolioForWithdraw.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Amount"
+              type="number"
+              fullWidth
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForWithdraw(null)}>Cancel</Button>
+            <Button onClick={() => handleWithdraw(selectedPortfolioForWithdraw.port_id)}>Withdraw</Button>
           </DialogActions>
         </Dialog>
       )}

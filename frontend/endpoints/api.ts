@@ -58,11 +58,11 @@ export const depositCash = async (portId: number, userId: number, amount: number
   return response.json();
 };
 
-export const withdrawCash = async (portName: string, userId: string, amount: number) => {
+export const withdrawCash = async (portId: number, userId: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/withdraw`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ port_name: portName, user_id: userId, amount }),
+    body: JSON.stringify({ port_id: portId, user_id: userId, amount }),
   });
   return response.json();
 };
