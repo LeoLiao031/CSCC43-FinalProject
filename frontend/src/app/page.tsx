@@ -3,6 +3,8 @@ import { Box, Tabs, Tab } from "@mui/material";
 import { useState } from "react";
 import AccountTab from "./components/AccountTab";
 import PortfolioTab from "./components/PortfolioTab";
+import StockListsTab from "./components/StockListsTab";
+import ReviewsTab from "./components/ReviewsTab";
 import FriendsTab from "./components/FriendsTab";
 
 export default function Home() {
@@ -33,9 +35,9 @@ export default function Home() {
       case 1:
         return <PortfolioTab loginStatus={loginStatus} username={username} userId={userId} />;
       case 2:
-        return <div>Stock Lists</div>;
+        return <StockListsTab loginStatus={loginStatus} userId={userId} />;
       case 3:
-        return <div>Predict</div>;
+        return <ReviewsTab loginStatus={loginStatus} userId={userId} />;
       case 4:
         return <FriendsTab loginStatus={loginStatus} userId={userId} username={username} />;
       default:
@@ -58,7 +60,7 @@ export default function Home() {
           <Tab label="Account" />
           <Tab label="Portfolios" />
           <Tab label="Stock Lists" />
-          <Tab label="Predict" />
+          <Tab label="Reviews" />
           <Tab label="Friends" />
         </Tabs>
       </Box>
