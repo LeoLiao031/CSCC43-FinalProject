@@ -284,7 +284,7 @@ app.put("/portfolios/transfer", async (req, res) => {
       `UPDATE Portfolios
        SET cash_dep = cash_dep - $1
        WHERE port_name = $2 AND user_id = $3
-       RETURNING port_name, cash_dep`,
+       RETURNING port_id, port_name, cash_dep`,
       [amount, give_port, owner]
     );
 
@@ -298,12 +298,14 @@ app.put("/portfolios/transfer", async (req, res) => {
       return res.status(400).json({ error: "Insufficient funds in the giving portfolio" });
     }
 
+    const giving_port_id = deductResult.rows[0].port_id;
+
     // Add cash to the receiving portfolio
     const addResult = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep + $1
        WHERE port_name = $2 AND user_id = $3
-       RETURNING port_name, cash_dep`,
+       RETURNING port_id, port_name, cash_dep`,
       [amount, get_port, owner]
     );
 
@@ -311,6 +313,22 @@ app.put("/portfolios/transfer", async (req, res) => {
       await pool.query("ROLLBACK");
       return res.status(404).json({ error: "Receiving portfolio not found" });
     }
+
+    const receiving_port_id = addResult.rows[0].port_id;
+
+    // Log the transfer in the Records table for the giving portfolio
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'TRANSFER_OUT', $2, CURRENT_DATE)`,
+      [giving_port_id, amount]
+    );
+
+    // Log the transfer in the Records table for the receiving portfolio
+    await pool.query(
+      `INSERT INTO Records (port_id, record_type, amount, date)
+       VALUES ($1, 'TRANSFER_IN', $2, CURRENT_DATE)`,
+      [receiving_port_id, amount]
+    );
 
     // Commit the transaction
     await pool.query("COMMIT");
@@ -328,6 +346,74 @@ app.put("/portfolios/transfer", async (req, res) => {
 });
 
 // Get performance statistics for a portfolio
+app.get("/api/portfolio/:portfolioId/performance", async (req, res) => {
+  const { portfolioId } = req.params;
+  const { startDate, endDate } = req.query; // Optional date range for historical data
+
+  try {
+    // Verify portfolio ownership
+    const portfolioCheck = await pool.query(
+      `SELECT port_id 
+       FROM Portfolios 
+       WHERE port_id = $1`,
+      [portfolioId]
+    );
+
+    if (portfolioCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Portfolio not found" });
+    }
+
+    // Fetch the latest stock prices and portfolio holdings
+    const portfolioHoldings = await pool.query(
+      `WITH recent_prices AS (
+         SELECT stock_symbol, close_price, timestamp
+         FROM StockHistory
+         WHERE (stock_symbol, timestamp) IN (
+           SELECT stock_symbol, MAX(timestamp)
+           FROM StockHistory
+           GROUP BY stock_symbol
+         )
+       )
+       SELECT 
+         sh.stock_symbol,
+         sh.quantity,
+         COALESCE(rp.close_price, 0) AS current_price,
+         (sh.quantity * COALESCE(rp.close_price, 0)) AS stock_value
+       FROM Stockholdings sh
+       LEFT JOIN recent_prices rp ON sh.stock_symbol = rp.stock_symbol
+       WHERE sh.port_id = $1`,
+      [portfolioId]
+    );
+
+    const holdings = portfolioHoldings.rows;
+
+    // Calculate total portfolio value
+    const totalStocksValue = holdings.reduce((sum, stock) => sum + stock.stock_value, 0);
+
+    // Fetch historical stock data if date range is provided
+    let historicalData = [];
+    if (startDate && endDate) {
+      const historicalQuery = await pool.query(
+        `SELECT stock_symbol, timestamp, close_price
+         FROM StockHistory
+         WHERE stock_symbol = ANY($1) AND DATE(timestamp) BETWEEN $2 AND $3
+         ORDER BY stock_symbol, timestamp`,
+        [holdings.map((h) => h.stock_symbol), startDate, endDate]
+      );
+      historicalData = historicalQuery.rows;
+    }
+
+    res.json({
+      portfolioId,
+      totalStocksValue,
+      holdings,
+      historicalData,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch portfolio performance statistics" });
+  }
+});
 
 // -- Stock management --
 
@@ -514,6 +600,18 @@ app.post("/stocks", async (req, res) => {
   const { stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume } = req.body;
 
   try {
+    // Check if a stock history record already exists for the given stock symbol and date
+    const existingRecord = await pool.query(
+      `SELECT history_id 
+       FROM StockHistory 
+       WHERE stock_symbol = $1 AND DATE(timestamp) = DATE($2)`,
+      [stock_symbol, timestamp]
+    );
+
+    if (existingRecord.rows.length > 0) {
+      return res.status(409).json({ error: "Stock history for this date already exists" });
+    }
+
     // Insert a new stock history record
     const result = await pool.query(
       `INSERT INTO StockHistory (stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume)
@@ -561,29 +659,104 @@ app.get("/stocks/:stock_symbol", async (req, res) => {
   }
 });
 
-// TODO: Get prediction data for stock performance 
+// Get all data on a stock
+app.get("/stocks/info/:stock_symbol", async (req, res) => {
+  const { stock_symbol } = req.params;
+  const { limit = 10, offset = 0 } = req.query; // Pagination parameters with defaults
+
+  try {
+    // Fetch stock symbol and company name
+    const stockInfo = await pool.query(
+      `SELECT s.stock_symbol, s.company_name
+       FROM Stocks s
+       WHERE s.stock_symbol = $1`,
+      [stock_symbol]
+    );
+
+    if (stockInfo.rows.length === 0) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+
+    // Fetch the latest stock price
+    const latestPrice = await pool.query(
+      `SELECT close_price, timestamp
+       FROM StockHistory
+       WHERE stock_symbol = $1
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [stock_symbol]
+    );
+
+    // Fetch historical stock data with pagination
+    const historicalData = await pool.query(
+      `SELECT date(timestamp) AS date, open_price, high_price, low_price, close_price, volume
+       FROM StockHistory
+       WHERE stock_symbol = $1
+       ORDER BY timestamp DESC
+       LIMIT $2 OFFSET $3`,
+      [stock_symbol, parseInt(limit), parseInt(offset)]
+    );
+
+    // Fetch total count for pagination
+    const totalCount = await pool.query(
+      `SELECT COUNT(*)
+       FROM StockHistory
+       WHERE stock_symbol = $1`,
+      [stock_symbol]
+    );
+
+    res.json({
+      stockInfo: stockInfo.rows[0],
+      latestPrice: latestPrice.rows[0] || null,
+      historicalData: historicalData.rows,
+      totalCount: parseInt(totalCount.rows[0].count),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock data" });
+  }
+});
+
+app.get("/api/stock/:stock_symbol/moving-average", async (req, res) => {
+  const { stock_symbol } = req.params;
+  const { period = 7 } = req.query; // Moving average period (default: 7 days)
+
+  try {
+    // Fetch the last `period` days of close prices
+    const historicalData = await pool.query(
+      `SELECT DATE(timestamp) AS date, close_price
+       FROM StockHistory
+       WHERE stock_symbol = $1
+       ORDER BY timestamp DESC
+       LIMIT $2`,
+      [stock_symbol, period]
+    );
+
+    if (historicalData.rows.length < period) {
+      return res.status(400).json({ error: "Not enough data to calculate moving average" });
+    }
+
+    const prices = historicalData.rows.map((row) => row.close_price);
+    const movingAverage = prices.reduce((sum, price) => sum + price, 0) / period;
+
+    res.json({
+      stock_symbol,
+      movingAverage,
+      historicalData: historicalData.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to calculate moving average" });
+  }
+});
 
 // -- Stock Lists --
 
 // Create a new stock list
 app.post("/stocklists", async (req, res) => {
-  const { list_name, username, visibility } = req.body;
+  const { list_name, user_id, visibility } = req.body;
 
   try {
-    // Retrieve the user_id for the given username
-    const userResult = await pool.query(
-      `SELECT id 
-       FROM Users 
-       WHERE username = $1`,
-      [username]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const user_id = userResult.rows[0].id;
-
     // Insert the new stock list
     const result = await pool.query(
       `INSERT INTO StockLists (user_id, name, visibility)
@@ -600,14 +773,14 @@ app.post("/stocklists", async (req, res) => {
 });
 
 // Get all stock lists created by a user
-app.get("/stocklists/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/stocklists/:user_id", async (req, res) => {
+  const { user_id } = req.params;
   try {
     const result = await pool.query(
       `SELECT * 
        FROM StockLists 
-       WHERE user_id = (SELECT id FROM Users WHERE username = $1)`,
-      [username]
+       WHERE user_id = $1`,
+      [user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -618,21 +791,9 @@ app.get("/stocklists/:username", async (req, res) => {
 
 // Delete a stock list
 app.delete("/stocklists", async (req, res) => {
-  const { list_id, username } = req.body;
+  const { list_id, user_id } = req.body;
 
   try {
-    // Retrieve the user_id for the given username
-    const userResult = await pool.query(
-      `SELECT id FROM Users WHERE username = $1`,
-      [username]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const user_id = userResult.rows[0].id;
-
     // Verify that the user owns the stock list
     const listResult = await pool.query(
       `SELECT user_id FROM StockLists WHERE list_id = $1`,
@@ -675,31 +836,20 @@ app.get("/stocklists/public", async (req, res) => {
   }
 });
 
-// Get all shared stock lists for a user
-app.get("/stocklists/shared/:username", async (req, res) => {
-  const { username } = req.params;
+// Get all shared stock lists for a user, ordered by name
+app.get("/stocklists/shared/:user_id", async (req, res) => {
+  const { user_id } = req.params;
 
   try {
-    // Retrieve the user_id for the given username
-    const userResult = await pool.query(
-      `SELECT id FROM Users WHERE username = $1`,
-      [username]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const user_id = userResult.rows[0].user_id;
-
-    // Fetch shared stock lists the user has access to
+    // Fetch shared stock lists the user has access to, ordered by name
     const result = await pool.query(
       `SELECT sl.list_id, sl.name, sl.created_at, sl.visibility, u.username AS owner
        FROM StockLists sl
        JOIN Users u ON sl.user_id = u.id
        WHERE sl.visibility = 'shared' AND sl.list_id IN (
          SELECT list_id FROM Visibility WHERE user_id = $1
-       )`,
+       )
+       ORDER BY sl.name ASC`,
       [user_id]
     );
 
@@ -713,18 +863,42 @@ app.get("/stocklists/shared/:username", async (req, res) => {
 // Get data for a stock list
 app.get("/stocklists/data/:list_id", async (req, res) => {
   const { list_id } = req.params;
+
   try {
-    const result = await pool.query(
-      `SELECT s.stock_symbol, s.quantity, sh.timestamp, sh.open_price, sh.high_price, sh.low_price, sh.close_price, sh.volume
-        FROM StockListStocks s
-        JOIN StockHistory sh ON s.stock_symbol = sh.stock_symbol
-        WHERE s.list_id = $1`,
+    // Fetch stock list details and creator's name
+    const stockListDetails = await pool.query(
+      `SELECT sl.list_id, sl.name AS list_name, sl.visibility, sl.created_at, u.username AS creator_name
+       FROM StockLists sl
+       JOIN Users u ON sl.user_id = u.id
+       WHERE sl.list_id = $1`,
       [list_id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "No stocks found for this list" });
+
+    if (stockListDetails.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
     }
-    res.json(result.rows);
+
+    // Fetch stock items with the latest stock price and company name
+    const stockItems = await pool.query(
+      `SELECT sli.stock_symbol, sli.quantity, s.company_name,
+              COALESCE(sh.close_price, 0) AS latest_price
+       FROM StockListStocks sli
+       JOIN Stocks s ON sli.stock_symbol = s.stock_symbol
+       LEFT JOIN LATERAL (
+         SELECT close_price
+         FROM StockHistory
+         WHERE stock_symbol = sli.stock_symbol
+         ORDER BY timestamp DESC
+         LIMIT 1
+       ) sh ON true
+       WHERE sli.list_id = $1`,
+      [list_id]
+    );
+
+    res.json({
+      stockList: stockListDetails.rows[0],
+      stockItems: stockItems.rows,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch stock list data" });
@@ -733,8 +907,33 @@ app.get("/stocklists/data/:list_id", async (req, res) => {
 
 // Add a stock to a stock list
 app.post("/stocklists/:list_id/stocks", async (req, res) => {
-  const { list_id, stock_symbol, quantity } = req.body;
+  const { list_id, stock_symbol, quantity, user_id } = req.body;
+
   try {
+    // Check if the user is the creator of the stock list
+    const listCheck = await pool.query(
+      `SELECT user_id FROM StockLists WHERE list_id = $1`,
+      [list_id]
+    );
+
+    if (listCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
+    }
+
+    if (listCheck.rows[0].user_id !== user_id) {
+      return res.status(403).json({ error: "You are not the creator of this stock list" });
+    }
+
+    // Check if the stock exists
+    const stockCheck = await pool.query(
+      `SELECT stock_symbol FROM Stocks WHERE stock_symbol = $1`,
+      [stock_symbol]
+    );
+
+    if (stockCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+
     // Check if the stock is already in the list
     const checkResult = await pool.query(
       `SELECT * FROM StockListStocks WHERE list_id = $1 AND stock_symbol = $2`,
@@ -744,15 +943,15 @@ app.post("/stocklists/:list_id/stocks", async (req, res) => {
     if (checkResult.rows.length > 0) {
       return res.status(409).json({ error: "Stock already exists in the list" });
     }
-    
+
     // Insert the stock into the stock list
     const result = await pool.query(
       `INSERT INTO StockListStocks (list_id, stock_symbol, quantity)
-        VALUES ($1, $2, $3)
-        RETURNING list_id, stock_symbol, quantity`,
+       VALUES ($1, $2, $3)
+       RETURNING list_id, stock_symbol, quantity`,
       [list_id, stock_symbol, quantity]
     );
-  
+
     res.json({
       message: "Stock added to the list successfully",
       stock: result.rows[0],
@@ -765,19 +964,34 @@ app.post("/stocklists/:list_id/stocks", async (req, res) => {
 
 // Remove a stock from a stock list
 app.delete("/stocklists/:list_id/stocks", async (req, res) => {
-  const { list_id, stock_symbol } = req.body;
+  const { list_id, stock_symbol, user_id } = req.body;
+
   try {
+    // Check if the user is the creator of the stock list
+    const listCheck = await pool.query(
+      `SELECT user_id FROM StockLists WHERE list_id = $1`,
+      [list_id]
+    );
+
+    if (listCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
+    }
+
+    if (listCheck.rows[0].user_id !== user_id) {
+      return res.status(403).json({ error: "You are not the creator of this stock list" });
+    }
+
     // Delete the stock from the stock list
     const result = await pool.query(
       `DELETE FROM StockListStocks
-        WHERE list_id = $1 AND stock_symbol = $2`,
+       WHERE list_id = $1 AND stock_symbol = $2`,
       [list_id, stock_symbol]
     );
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Stock not found in the list" });
     }
-    
+
     res.json({ message: "Stock removed from the list successfully" });
   } catch (err) {
     console.error(err);
@@ -787,33 +1001,9 @@ app.delete("/stocklists/:list_id/stocks", async (req, res) => {
 
 // Share a stock list with another user
 app.post("/stocklists/:list_id/share", async (req, res) => {
-  const { list_id, username, current_user } = req.body; // Include `current_user` in the request body
+  const { list_id, user_id, current_user_id } = req.body;
 
   try {
-    // Retrieve the user_id for the given username
-    const userResult = await pool.query(
-      `SELECT id FROM Users WHERE username = $1`,
-      [username]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User to share with not found" });
-    }
-
-    const user_id = userResult.rows[0].id;
-
-    // Retrieve the user_id for the current user
-    const currentUserResult = await pool.query(
-      `SELECT id FROM Users WHERE username = $1`,
-      [current_user]
-    );
-
-    if (currentUserResult.rows.length === 0) {
-      return res.status(404).json({ error: "Current user not found" });
-    }
-
-    const current_user_id = currentUserResult.rows[0].id;
-
     // Check if the stock list exists and belongs to the current user
     const listResult = await pool.query(
       `SELECT user_id, visibility FROM StockLists WHERE list_id = $1`,
@@ -862,11 +1052,77 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
     res.status(500).json({ error: "Failed to share stock list" });
   }
 });
+
+// Statistics of Stock List
+app.get("/api/stocklist/:list_id/statistics", async (req, res) => {
+  const { list_id } = req.params;
+  const { user_id } = req.query; // User ID to check access
+
+  try {
+    // Verify if the user has access to the stock list
+    const accessCheck = await pool.query(
+      `SELECT sl.list_id, sl.name AS list_name, sl.visibility, u.username AS creator_name
+       FROM StockLists sl
+       JOIN Users u ON sl.user_id = u.id
+       WHERE sl.list_id = $1
+       AND (sl.user_id = $2 OR sl.visibility = 'public' OR EXISTS (
+         SELECT 1 FROM Visibility v WHERE v.list_id = sl.list_id AND v.user_id = $2
+       ))`,
+      [list_id, user_id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You do not have access to this stock list" });
+    }
+
+    const stockListDetails = accessCheck.rows[0];
+
+    // Fetch stock items and calculate their statistics
+    const stockItems = await pool.query(
+      `SELECT 
+         sli.stock_symbol,
+         sli.quantity,
+         s.company_name,
+         COALESCE((
+           SELECT sh.close_price
+           FROM StockHistory sh
+           WHERE sh.stock_symbol = sli.stock_symbol
+           ORDER BY sh.timestamp DESC
+           LIMIT 1
+         ), 0) AS latest_price,
+         (sli.quantity * COALESCE((
+           SELECT sh.close_price
+           FROM StockHistory sh
+           WHERE sh.stock_symbol = sli.stock_symbol
+           ORDER BY sh.timestamp DESC
+           LIMIT 1
+         ), 0)) AS stock_value
+       FROM StockListStocks sli
+       JOIN Stocks s ON sli.stock_symbol = s.stock_symbol
+       WHERE sli.list_id = $1`,
+      [list_id]
+    );
+
+    const stockData = stockItems.rows;
+
+    // Calculate total value of the stock list
+    const totalValue = stockData.reduce((sum, stock) => sum + stock.stock_value, 0);
+
+    res.json({
+      stockList: stockListDetails,
+      totalValue,
+      stockItems: stockData,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock list statistics" });
+  }
+});
 // -- Friends management --
 
 // Create or accept a friend request
 app.post("/friends", async (req, res) => {
-  const { req_friend, rec_friend } = req.body;
+  const { req_friend_id, rec_friend_id } = req.body;
 
   try {
     // Check if the other person has already sent a friend request
@@ -874,7 +1130,7 @@ app.post("/friends", async (req, res) => {
       `SELECT relation_id
        FROM Friends
        WHERE req_friend = $2 AND rec_friend = $1 AND pending = true`,
-      [req_friend, rec_friend]
+      [req_friend_id, rec_friend_id]
     );
 
     if (reverseCheck.rows.length > 0) {
@@ -884,7 +1140,7 @@ app.post("/friends", async (req, res) => {
          SET pending = false
          WHERE req_friend = $2 AND rec_friend = $1
          RETURNING relation_id, req_friend, rec_friend, pending`,
-        [req_friend, rec_friend]
+        [req_friend_id, rec_friend_id]
       );
 
       return res.json({
@@ -898,7 +1154,7 @@ app.post("/friends", async (req, res) => {
       `SELECT 1
        FROM Friends
        WHERE req_friend = $1 AND rec_friend = $2`,
-      [req_friend, rec_friend]
+      [req_friend_id, rec_friend_id]
     );
 
     if (checkResult.rows.length > 0) {
@@ -910,7 +1166,7 @@ app.post("/friends", async (req, res) => {
       `INSERT INTO Friends (req_friend, rec_friend)
        VALUES ($1, $2)
        RETURNING relation_id, req_friend, rec_friend, pending`,
-      [req_friend, rec_friend]
+      [req_friend_id, rec_friend_id]
     );
 
     res.json({
@@ -925,7 +1181,7 @@ app.post("/friends", async (req, res) => {
 
 // Accept friend request
 app.put("/friends/accept", async (req, res) => {
-  const { req_friend, rec_friend } = req.body;
+  const { req_friend_id, rec_friend_id } = req.body;
 
   try {
     // Update the friend request to accepted
@@ -934,7 +1190,7 @@ app.put("/friends/accept", async (req, res) => {
        SET pending = false
        WHERE req_friend = $1 AND rec_friend = $2
        RETURNING relation_id, req_friend, rec_friend, pending`,
-      [req_friend, rec_friend]
+      [req_friend_id, rec_friend_id]
     );
 
     if (result.rowCount === 0) {
@@ -953,15 +1209,15 @@ app.put("/friends/accept", async (req, res) => {
 
 // Remove a friend
 app.delete("/friends", async (req, res) => {
-  const { req_friend, rec_friend } = req.body;
+  const { req_friend_id, rec_friend_id } = req.body;
 
   try {
     // Delete the friend relationship
     const result = await pool.query(
       `DELETE FROM Friends
        WHERE (req_friend = $1 AND rec_friend = $2)
-       OR (rec_friend = $1 AND req_friend = $2)`
-      [req_friend, rec_friend]
+       OR (rec_friend = $1 AND req_friend = $2)`,
+      [req_friend_id, rec_friend_id]
     );
 
     if (result.rowCount === 0) {
@@ -976,12 +1232,14 @@ app.delete("/friends", async (req, res) => {
 });
 
 // Search for new friends
-app.get("/friends/search/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/friends/search/:query", async (req, res) => {
+  const { query } = req.params;
   try {
     const result = await pool.query(
-      `SELECT * FROM Users WHERE username ILIKE $1`,
-      [`${username}%`]
+      `SELECT id AS user_id, username
+       FROM Users
+       WHERE username ILIKE $1`,
+      [`${query}%`]
     );
     res.json(result.rows);
   } catch (err) {
@@ -992,14 +1250,14 @@ app.get("/friends/search/:username", async (req, res) => {
 
 // Withdraw friend request
 app.delete("/friends/withdraw", async (req, res) => {
-  const { req_friend, rec_friend } = req.body;
+  const { req_friend_id, rec_friend_id } = req.body;
 
   try {
     // Delete the friend request
     const result = await pool.query(
       `DELETE FROM Friends
        WHERE req_friend = $1 AND rec_friend = $2 AND pending = true`,
-      [req_friend, rec_friend]
+      [req_friend_id, rec_friend_id]
     );
 
     if (result.rowCount === 0) {
@@ -1013,13 +1271,17 @@ app.delete("/friends/withdraw", async (req, res) => {
   }
 });
 
-// Get friends list (make sure pending is false)
-app.get("/friends/:username", async (req, res) => {
-  const { username } = req.params;
+// Get friends list (names and IDs only)
+app.get("/friends/:user_id", async (req, res) => {
+  const { user_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT * FROM Friends WHERE (req_friend = $1 OR rec_friend = $1) AND pending = false`,
-      [username]
+      `SELECT DISTINCT u.id AS user_id, u.username
+       FROM Friends f
+       JOIN Users u ON (f.req_friend = $1 AND f.rec_friend = u.id)
+                  OR (f.rec_friend = $1 AND f.req_friend = u.id)
+       WHERE f.pending = false`,
+      [user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1029,12 +1291,15 @@ app.get("/friends/:username", async (req, res) => {
 });
 
 // Get incoming friend requests
-app.get("/friends/requests/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/friends/requests/:user_id", async (req, res) => {
+  const { user_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT * FROM Friends WHERE rec_friend = $1 AND pending = true`,
-      [username]
+      `SELECT f.relation_id, u.id AS user_id, u.username
+       FROM Friends f
+       JOIN Users u ON f.req_friend = u.id
+       WHERE f.rec_friend = $1 AND f.pending = true`,
+      [user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1044,12 +1309,15 @@ app.get("/friends/requests/:username", async (req, res) => {
 });
 
 // Get outgoing friend requests
-app.get("/friends/outgoing/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/friends/outgoing/:user_id", async (req, res) => {
+  const { user_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT * FROM Friends WHERE req_friend = $1 AND pending = true`,
-      [username]
+      `SELECT f.relation_id, u.id AS user_id, u.username
+       FROM Friends f
+       JOIN Users u ON f.rec_friend = u.id
+       WHERE f.req_friend = $1 AND f.pending = true`,
+      [user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1059,12 +1327,19 @@ app.get("/friends/outgoing/:username", async (req, res) => {
 });
 
 // Get non-friends list
-app.get("/friends/non-friends/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/friends/non-friends/:user_id", async (req, res) => {
+  const { user_id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT * FROM Users WHERE username != $1 AND username NOT IN (SELECT req_friend FROM Friends WHERE rec_friend = $1 UNION SELECT rec_friend FROM Friends WHERE req_friend = $1)`,
-      [username]
+      `SELECT u.id AS user_id, u.username
+       FROM Users u
+       WHERE u.id != $1
+       AND u.id NOT IN (
+         SELECT req_friend FROM Friends WHERE rec_friend = $1
+         UNION
+         SELECT rec_friend FROM Friends WHERE req_friend = $1
+       )`,
+      [user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1072,6 +1347,167 @@ app.get("/friends/non-friends/:username", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch non-friends list" });
   }
 });
+
+// -- Stock List Review management --
+
+// Get all reviews for a stock list
+app.get("/api/review/list/:list_id", async (req, res) => {
+  const { list_id } = req.params;
+  const { user_id } = req.query;
+
+  try {
+    // Check if the user has access to the stock list
+    const accessCheck = await pool.query(
+      `SELECT sl.list_id, sl.visibility, sl.user_id AS owner_id
+       FROM StockLists sl
+       LEFT JOIN Visibility v ON sl.list_id = v.list_id
+       WHERE sl.list_id = $1
+       AND (sl.user_id = $2 OR sl.visibility = 'public' OR v.user_id = $2)`,
+      [list_id, user_id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You do not have access to this stock list" });
+    }
+
+    // Fetch all reviews for the stock list
+    const reviews = await pool.query(
+      `SELECT r.review_id, r.content, r.created_at, u.username AS reviewer
+       FROM Reviews r
+       JOIN Users u ON r.user_id = u.id
+       WHERE r.list_id = $1
+       ORDER BY r.created_at DESC`,
+      [list_id]
+    );
+
+    res.json(reviews.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch reviews for the stock list" });
+  }
+});
+
+// Create a review for a stock list
+app.post("/api/review/:list_id", async (req, res) => {
+  const { list_id } = req.params;
+  const { user_id, content } = req.body;
+
+  try {
+    // Check if the user has access to the stock list
+    const accessCheck = await pool.query(
+      `SELECT sl.list_id, sl.visibility, sl.user_id AS owner_id
+       FROM StockLists sl
+       LEFT JOIN Visibility v ON sl.list_id = v.list_id
+       WHERE sl.list_id = $1
+       AND (sl.user_id = $2 OR sl.visibility = 'public' OR v.user_id = $2)`,
+      [list_id, user_id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You do not have access to this stock list" });
+    }
+
+    // Check if the user has already posted a review
+    const existingReview = await pool.query(
+      `SELECT review_id
+       FROM Reviews
+       WHERE list_id = $1 AND user_id = $2`,
+      [list_id, user_id]
+    );
+
+    if (existingReview.rows.length > 0) {
+      return res.status(409).json({ error: "You have already posted a review for this stock list" });
+    }
+
+    // Insert the new review
+    const result = await pool.query(
+      `INSERT INTO Reviews (user_id, list_id, content)
+       VALUES ($1, $2, $3)
+       RETURNING review_id, user_id, list_id, content, created_at`,
+      [user_id, list_id, content]
+    );
+
+    res.json({
+      message: "Review created successfully",
+      review: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create review" });
+  }
+});
+
+// Edit a review for a stock list
+app.put("/api/review/:review_id", async (req, res) => {
+  const { review_id } = req.params;
+  const { user_id, content } = req.body;
+
+  try {
+    // Check if the user is the creator of the review
+    const reviewCheck = await pool.query(
+      `SELECT review_id
+       FROM Reviews
+       WHERE review_id = $1 AND user_id = $2`,
+      [review_id, user_id]
+    );
+
+    if (reviewCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not authorized to edit this review" });
+    }
+
+    // Update the review content
+    const result = await pool.query(
+      `UPDATE Reviews
+       SET content = $1, edited_at = CURRENT_TIMESTAMP
+       WHERE review_id = $2
+       RETURNING review_id, user_id, list_id, content, edited_at`,
+      [content, review_id]
+    );
+
+    res.json({
+      message: "Review updated successfully",
+      review: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update review" });
+  }
+});
+
+// Delete a review for a stock list
+app.delete("/api/review/:review_id", async (req, res) => {
+  const { review_id } = req.params;
+  const { user_id } = req.body;
+
+  try {
+    // Check if the user is the creator of the review or the owner of the stock list
+    const reviewCheck = await pool.query(
+      `SELECT r.review_id, sl.user_id AS list_owner
+       FROM Reviews r
+       JOIN StockLists sl ON r.list_id = sl.list_id
+       WHERE r.review_id = $1 AND (r.user_id = $2 OR sl.user_id = $2)`,
+      [review_id, user_id]
+    );
+
+    if (reviewCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You are not authorized to delete this review" });
+    }
+
+    // Delete the review
+    const result = await pool.query(
+      `DELETE FROM Reviews
+       WHERE review_id = $1`,
+      [review_id]
+    );
+
+    res.json({ message: "Review deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete review" });
+  }
+});
+
+
 
 const PORT = 4000;
 app.listen(PORT, () => {
