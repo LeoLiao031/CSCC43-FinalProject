@@ -931,7 +931,7 @@ app.get("/stocklists/shared/:user_id", async (req, res) => {
   }
 });
 
-// Get data for a stock list
+// Get data for a stock list *
 app.get("/stocklists/data/:list_id", async (req, res) => {
   const { list_id } = req.params;
 
@@ -1126,7 +1126,7 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
 
 // -- Friends management --
 
-// Create or accept a friend request
+// Create or accept a friend request *
 app.post("/friends", async (req, res) => {
   const { req_friend_id, rec_friend_id } = req.body;
 
@@ -1185,7 +1185,7 @@ app.post("/friends", async (req, res) => {
   }
 });
 
-// Accept friend request
+// Accept friend request *
 app.put("/friends/accept", async (req, res) => {
   const { req_friend_id, rec_friend_id } = req.body;
 
@@ -1213,7 +1213,7 @@ app.put("/friends/accept", async (req, res) => {
   }
 });
 
-// Remove a friend
+// Remove a friend *
 app.delete("/friends", async (req, res) => {
   const { req_friend_id, rec_friend_id } = req.body;
 
@@ -1237,16 +1237,15 @@ app.delete("/friends", async (req, res) => {
   }
 });
 
-// Search for new friends
+// Search for new friends *
 app.get("/friends/search/:query/:user_id", async (req, res) => {
   const { query, user_id } = req.params;
-  
   try {
     const result = await pool.query(
       `SELECT id AS user_id, username
        FROM Users
        WHERE username ILIKE $1 AND id != $2`,
-      [`${query}%`, user_id]
+       [`${query}%`, user_id]
     );
     res.json(result.rows);
   } catch (err) {
@@ -1255,7 +1254,7 @@ app.get("/friends/search/:query/:user_id", async (req, res) => {
   }
 });
 
-// Withdraw friend request
+// Withdraw friend request *
 app.delete("/friends/withdraw", async (req, res) => {
   const { req_friend_id, rec_friend_id } = req.body;
 
@@ -1278,79 +1277,99 @@ app.delete("/friends/withdraw", async (req, res) => {
   }
 });
 
-// Get friends list (names and IDs only)
-app.get("/friends/:user_id", async (req, res) => {
-  const { user_id } = req.params;
+// Get friends list *
+app.get("/friends/:username", async (req, res) => {
+  const { username } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT DISTINCT u.id AS user_id, u.username
+      `SELECT DISTINCT u.username AS friend_username
        FROM Friends f
-       JOIN Users u ON (f.req_friend = $1 AND f.rec_friend = u.id)
-                  OR (f.rec_friend = $1 AND f.req_friend = u.id)
+       JOIN Users u ON (f.req_friend = $1 AND f.rec_friend = u.username)
+                  OR (f.rec_friend = $1 AND f.req_friend = u.username)
        WHERE f.pending = false`,
-      [user_id]
+      [username]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "No friends found" });
+    }
+
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching friends list:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch friends list" });
   }
 });
 
 // Get incoming friend requests
-app.get("/friends/requests/:user_id", async (req, res) => {
-  const { user_id } = req.params;
+app.get("/friends/requests/:username", async (req, res) => {
+  const { username } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT f.relation_id, u.id AS user_id, u.username
+      `SELECT f.relation_id, u.username AS requester_username
        FROM Friends f
-       JOIN Users u ON f.req_friend = u.id
+       JOIN Users u ON f.req_friend = u.username
        WHERE f.rec_friend = $1 AND f.pending = true`,
-      [user_id]
+      [username]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "No incoming friend requests found" });
+    }
+
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching incoming friend requests:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch incoming friend requests" });
   }
 });
 
-// Get outgoing friend requests
-app.get("/friends/outgoing/:user_id", async (req, res) => {
-  const { user_id } = req.params;
+// Get outgoing friend requests *
+app.get("/friends/outgoing/:username", async (req, res) => {
+  const { username } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT f.relation_id, u.id AS user_id, u.username
+      `SELECT f.relation_id, u.username AS recipient_username
        FROM Friends f
-       JOIN Users u ON f.rec_friend = u.id
+       JOIN Users u ON f.rec_friend = u.username
        WHERE f.req_friend = $1 AND f.pending = true`,
-      [user_id]
+      [username]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "No outgoing friend requests found" });
+    }
+
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching outgoing friend requests:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch outgoing friend requests" });
   }
 });
 
-// Get non-friends list
-app.get("/friends/non-friends/:user_id", async (req, res) => {
-  const { user_id } = req.params;
+// Get non-friends list by username *
+app.get("/friends/non-friends/:username", async (req, res) => {
+  const { username } = req.params;
+
   try {
     const result = await pool.query(
-      `SELECT u.id AS user_id, u.username
+      `SELECT u.username
        FROM Users u
-       WHERE u.id != $1
-       AND u.id NOT IN (
+       WHERE u.username != $1
+       AND u.username NOT IN (
          SELECT req_friend FROM Friends WHERE rec_friend = $1
          UNION
          SELECT rec_friend FROM Friends WHERE req_friend = $1
        )`,
-      [user_id]
+      [username]
     );
+
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching non-friends list:", err.message, err.stack);
     res.status(500).json({ error: "Failed to fetch non-friends list" });
   }
 });
