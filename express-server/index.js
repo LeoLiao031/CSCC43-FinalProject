@@ -21,7 +21,7 @@ app.use((req, res, next) => {
 
 // -- User management --
 
-// Create a user
+// Create a user *
 app.post("/users", async (req, res) => {
   const { username, password, email } = req.body;
   try {
@@ -38,7 +38,7 @@ app.post("/users", async (req, res) => {
   }
 });
 
-// Get user by username
+// Get user by username *
 app.get("/users/:username", async (req, res) => {
   try {
     const result = await pool.query(
@@ -52,7 +52,7 @@ app.get("/users/:username", async (req, res) => {
   }
 });
 
-// Search for usernames
+// Search for usernames *
 app.get("/users/search/:query", async (req, res) => {
   try {
     const result = await pool.query(
@@ -68,7 +68,7 @@ app.get("/users/search/:query", async (req, res) => {
 
 // -- Portfolio management --
 
-// Create a portfolio
+// Create a portfolio *
 app.post("/portfolios", async (req, res) => {
   const { port_name, cash_dep, user_id } = req.body;
   try {
@@ -86,7 +86,7 @@ app.post("/portfolios", async (req, res) => {
   }
 });
 
-// Delete a portfolio
+// Delete a portfolio *
 app.delete("/portfolios", async (req, res) => {
   const { port_name, user_id } = req.body;
   try {
@@ -105,7 +105,7 @@ app.delete("/portfolios", async (req, res) => {
   }
 });
 
-// Get all portfolios for a user with market value
+// Get all portfolios for a user with market value *
 app.get("/portfolios/:user_id", async (req, res) => {
   const { user_id } = req.params;
 
@@ -143,7 +143,77 @@ app.get("/portfolios/:user_id", async (req, res) => {
   }
 });
 
-// Get portfolio info with detailed stock holdings and market value
+// Get performance statistics for a portfolio *
+app.get("/portfolios/:port_id/performance", async (req, res) => {
+  const { port_id } = req.params;
+
+  // Validate port_id
+  if (isNaN(port_id)) {
+    return res.status(400).json({ error: "Invalid portfolio ID" });
+  }
+
+  try {
+    // Verify portfolio ownership
+    const portfolioCheck = await pool.query(
+      `SELECT port_id 
+       FROM Portfolios 
+       WHERE port_id = $1`,
+      [port_id]
+    );
+
+    if (portfolioCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Portfolio not found" });
+    }
+
+    // Fetch the latest stock prices and portfolio holdings
+    const portfolioHoldings = await pool.query(
+      `WITH recent_prices AS (
+         SELECT stock_symbol, close_price, timestamp
+         FROM StockHistory
+         WHERE (stock_symbol, timestamp) IN (
+           SELECT stock_symbol, MAX(timestamp)
+           FROM StockHistory
+           GROUP BY stock_symbol
+         )
+       )
+       SELECT 
+         sh.stock_symbol,
+         sh.quantity,
+         COALESCE(rp.close_price, 0) AS current_price,
+         (sh.quantity * COALESCE(rp.close_price, 0)) AS stock_value
+       FROM Stockholdings sh
+       LEFT JOIN recent_prices rp ON sh.stock_symbol = rp.stock_symbol
+       WHERE sh.port_id = $1`,
+      [port_id]
+    );
+
+    const holdings = portfolioHoldings.rows;
+
+    // Handle empty holdings
+    if (holdings.length === 0) {
+      return res.json({
+        portfolioId: port_id,
+        totalStocksValue: 0,
+        holdings: [],
+        historicalData: [],
+      });
+    }
+
+    // Calculate total portfolio value
+    const totalStocksValue = holdings.reduce((sum, stock) => sum + stock.stock_value, 0);
+
+    res.json({
+      portfolioId: port_id,
+      totalStocksValue,
+      holdings,
+    });
+  } catch (err) {
+    console.error("Error fetching portfolio performance:", err);
+    res.status(500).json({ error: "Failed to fetch portfolio performance statistics" });
+  }
+});
+
+// Get portfolio info with detailed stock holdings and market value *
 app.get("/portfolios/:port_id/:user_id", async (req, res) => {
   const { port_id, user_id } = req.params;
 
@@ -191,23 +261,21 @@ app.get("/portfolios/:port_id/:user_id", async (req, res) => {
   }
 });
 
-// Deposit cash into portfolio
+// Deposit cash into portfolio *
 app.put("/portfolios/deposit", async (req, res) => {
-  const { port_name, user_id, amount } = req.body;
+  const { port_id, user_id, amount } = req.body; // Changed port_name to port_id
   try {
     // Check if the user is the owner of the portfolio
     const ownershipCheck = await pool.query(
       `SELECT port_id, user_id 
        FROM Portfolios 
-       WHERE port_name = $1 AND user_id = $2`,
-      [port_name, user_id]
+       WHERE port_id = $1 AND user_id = $2`, // Changed condition to use port_id
+      [port_id, user_id]
     );
 
     if (ownershipCheck.rows.length === 0) {
       return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
     }
-
-    const { port_id } = ownershipCheck.rows[0];
 
     // Update the portfolio's cash balance
     const result = await pool.query(
@@ -232,23 +300,21 @@ app.put("/portfolios/deposit", async (req, res) => {
   }
 });
 
-// Withdraw cash from portfolio
+// Withdraw cash from portfolio *
 app.put("/portfolios/withdraw", async (req, res) => {
-  const { port_name, owner, amount } = req.body;
+  const { port_id, user_id, amount } = req.body; // Changed port_name to port_id
   try {
     // Check if the user is the owner of the portfolio
     const ownershipCheck = await pool.query(
       `SELECT port_id, user_id 
        FROM Portfolios 
-       WHERE port_name = $1 AND user_id = $2`,
-      [port_name, owner]
+       WHERE port_id = $1 AND user_id = $2`, // Changed condition to use port_id
+      [port_id, user_id]
     );
 
     if (ownershipCheck.rows.length === 0) {
       return res.status(403).json({ error: "You are not the owner of this portfolio or it does not exist" });
     }
-
-    const { port_id } = ownershipCheck.rows[0];
 
     // Update the portfolio's cash balance
     const result = await pool.query(
@@ -277,9 +343,9 @@ app.put("/portfolios/withdraw", async (req, res) => {
   }
 });
 
-// Transfer cash between portfolios
+// Transfer cash between portfolios *
 app.put("/portfolios/transfer", async (req, res) => {
-  const { give_port, get_port, owner, amount } = req.body;
+  const { give_port_id, get_port_id, owner, amount } = req.body;
 
   try {
     // Start a transaction
@@ -289,9 +355,9 @@ app.put("/portfolios/transfer", async (req, res) => {
     const deductResult = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep - $1
-       WHERE port_name = $2 AND user_id = $3
+       WHERE port_id = $2 AND user_id = $3
        RETURNING port_id, port_name, cash_dep`,
-      [amount, give_port, owner]
+      [amount, give_port_id, owner]
     );
 
     if (deductResult.rowCount === 0) {
@@ -304,15 +370,13 @@ app.put("/portfolios/transfer", async (req, res) => {
       return res.status(400).json({ error: "Insufficient funds in the giving portfolio" });
     }
 
-    const giving_port_id = deductResult.rows[0].port_id;
-
     // Add cash to the receiving portfolio
     const addResult = await pool.query(
       `UPDATE Portfolios
        SET cash_dep = cash_dep + $1
-       WHERE port_name = $2 AND user_id = $3
+       WHERE port_id = $2 AND user_id = $3
        RETURNING port_id, port_name, cash_dep`,
-      [amount, get_port, owner]
+      [amount, get_port_id, owner]
     );
 
     if (addResult.rowCount === 0) {
@@ -320,20 +384,18 @@ app.put("/portfolios/transfer", async (req, res) => {
       return res.status(404).json({ error: "Receiving portfolio not found" });
     }
 
-    const receiving_port_id = addResult.rows[0].port_id;
-
     // Log the transfer in the Records table for the giving portfolio
     await pool.query(
       `INSERT INTO Records (port_id, record_type, amount, date)
        VALUES ($1, 'TRANSFER_OUT', $2, CURRENT_DATE)`,
-      [giving_port_id, amount]
+      [give_port_id, amount]
     );
 
     // Log the transfer in the Records table for the receiving portfolio
     await pool.query(
       `INSERT INTO Records (port_id, record_type, amount, date)
        VALUES ($1, 'TRANSFER_IN', $2, CURRENT_DATE)`,
-      [receiving_port_id, amount]
+      [get_port_id, amount]
     );
 
     // Commit the transaction
@@ -351,79 +413,9 @@ app.put("/portfolios/transfer", async (req, res) => {
   }
 });
 
-// Get performance statistics for a portfolio
-app.get("/api/portfolio/:portfolioId/performance", async (req, res) => {
-  const { portfolioId } = req.params;
-  const { startDate, endDate } = req.query; // Optional date range for historical data
-
-  try {
-    // Verify portfolio ownership
-    const portfolioCheck = await pool.query(
-      `SELECT port_id 
-       FROM Portfolios 
-       WHERE port_id = $1`,
-      [portfolioId]
-    );
-
-    if (portfolioCheck.rows.length === 0) {
-      return res.status(404).json({ error: "Portfolio not found" });
-    }
-
-    // Fetch the latest stock prices and portfolio holdings
-    const portfolioHoldings = await pool.query(
-      `WITH recent_prices AS (
-         SELECT stock_symbol, close_price, timestamp
-         FROM StockHistory
-         WHERE (stock_symbol, timestamp) IN (
-           SELECT stock_symbol, MAX(timestamp)
-           FROM StockHistory
-           GROUP BY stock_symbol
-         )
-       )
-       SELECT 
-         sh.stock_symbol,
-         sh.quantity,
-         COALESCE(rp.close_price, 0) AS current_price,
-         (sh.quantity * COALESCE(rp.close_price, 0)) AS stock_value
-       FROM Stockholdings sh
-       LEFT JOIN recent_prices rp ON sh.stock_symbol = rp.stock_symbol
-       WHERE sh.port_id = $1`,
-      [portfolioId]
-    );
-
-    const holdings = portfolioHoldings.rows;
-
-    // Calculate total portfolio value
-    const totalStocksValue = holdings.reduce((sum, stock) => sum + stock.stock_value, 0);
-
-    // Fetch historical stock data if date range is provided
-    let historicalData = [];
-    if (startDate && endDate) {
-      const historicalQuery = await pool.query(
-        `SELECT stock_symbol, timestamp, close_price
-         FROM StockHistory
-         WHERE stock_symbol = ANY($1) AND DATE(timestamp) BETWEEN $2 AND $3
-         ORDER BY stock_symbol, timestamp`,
-        [holdings.map((h) => h.stock_symbol), startDate, endDate]
-      );
-      historicalData = historicalQuery.rows;
-    }
-
-    res.json({
-      portfolioId,
-      totalStocksValue,
-      holdings,
-      historicalData,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch portfolio performance statistics" });
-  }
-});
-
 // -- Stock management --
 
-// Buy a stock for a portfolio
+// Buy a stock for a portfolio *
 app.post("/portfolios/stocks/buy", async (req, res) => {
   const { port_id, stock_symbol, amount, user_id } = req.body;
 
@@ -522,7 +514,7 @@ app.post("/portfolios/stocks/buy", async (req, res) => {
   }
 });
 
-// Sell a stock from a portfolio
+// Sell a stock from a portfolio *
 app.delete("/portfolios/stocks/sell", async (req, res) => {
   const { port_id, stock_symbol, amount, user_id } = req.body;
 
@@ -601,7 +593,7 @@ app.delete("/portfolios/stocks/sell", async (req, res) => {
 
 // -- Stock History Data --
 
-// Add a new stock to StockHistory (specific timestamp)
+// Add a new stock to StockHistory (specific timestamp) *
 app.post("/stocks", async (req, res) => {
   const { stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume } = req.body;
 
@@ -636,7 +628,7 @@ app.post("/stocks", async (req, res) => {
   }
 });
 
-// Get stock data
+// Get stock data *
 app.get("/stocks/:stock_symbol", async (req, res) => {
   const { stock_symbol } = req.params;
   const { date } = req.query; // Optional query parameter for filtering by date
@@ -665,7 +657,7 @@ app.get("/stocks/:stock_symbol", async (req, res) => {
   }
 });
 
-// Get all data on a stock
+// Get all data on a stock *
 app.get("/stocks/info/:stock_symbol", async (req, res) => {
   const { stock_symbol } = req.params;
   const { limit = 10, offset = 0 } = req.query; // Pagination parameters with defaults
@@ -673,7 +665,7 @@ app.get("/stocks/info/:stock_symbol", async (req, res) => {
   try {
     // Fetch stock symbol and company name
     const stockInfo = await pool.query(
-      `SELECT s.stock_symbol, s.company_name
+      `SELECT s.stock_symbol, s.stock_name
        FROM Stocks s
        WHERE s.stock_symbol = $1`,
       [stock_symbol]
@@ -723,7 +715,8 @@ app.get("/stocks/info/:stock_symbol", async (req, res) => {
   }
 });
 
-app.get("/api/stock/:stock_symbol/moving-average", async (req, res) => {
+// Predict next price (moving average) *
+app.get("/stocks/:stock_symbol/predict", async (req, res) => {
   const { stock_symbol } = req.params;
   const { period = 7 } = req.query; // Moving average period (default: 7 days)
 
@@ -742,7 +735,7 @@ app.get("/api/stock/:stock_symbol/moving-average", async (req, res) => {
       return res.status(400).json({ error: "Not enough data to calculate moving average" });
     }
 
-    const prices = historicalData.rows.map((row) => row.close_price);
+    const prices = historicalData.rows.map((row) => parseFloat(row.close_price));
     const movingAverage = prices.reduce((sum, price) => sum + price, 0) / period;
 
     res.json({
@@ -758,7 +751,7 @@ app.get("/api/stock/:stock_symbol/moving-average", async (req, res) => {
 
 // -- Stock Lists --
 
-// Create a new stock list
+// Create a new stock list *
 app.post("/stocklists", async (req, res) => {
   const { list_name, user_id, visibility } = req.body;
 
@@ -778,7 +771,88 @@ app.post("/stocklists", async (req, res) => {
   }
 });
 
-// Get all stock lists created by a user
+// Get all public stock lists *
+app.get("/stocklists/public", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT *
+        FROM StockLists
+        WHERE visibility = 'public'`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch public stock lists" });
+  }
+});
+
+// Statistics of Stock List *
+app.get("/stocklists/:list_id/statistics", async (req, res) => {
+  const { list_id } = req.params;
+  const { user_id } = req.query; // User ID to check access
+
+  try {
+    // Verify if the user has access to the stock list
+    const accessCheck = await pool.query(
+      `SELECT sl.list_id, sl.name AS list_name, sl.visibility, u.username AS creator_name
+       FROM StockLists sl
+       JOIN Users u ON sl.user_id = u.id
+       WHERE sl.list_id = $1
+       AND (sl.user_id = $2 OR sl.visibility = 'public' OR EXISTS (
+         SELECT 1 FROM Visibility v WHERE v.list_id = sl.list_id AND v.user_id = $2
+       ))`,
+      [list_id, user_id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "You do not have access to this stock list" });
+    }
+
+    const stockListDetails = accessCheck.rows[0];
+
+    // Fetch stock items and calculate their statistics
+    const stockItems = await pool.query(
+      `SELECT 
+         sli.stock_symbol,
+         sli.quantity,
+         s.stock_name,
+         COALESCE((
+           SELECT sh.close_price
+           FROM StockHistory sh
+           WHERE sh.stock_symbol = sli.stock_symbol
+           ORDER BY sh.timestamp DESC
+           LIMIT 1
+         ), 0) AS latest_price,
+         (sli.quantity * COALESCE((
+           SELECT sh.close_price
+           FROM StockHistory sh
+           WHERE sh.stock_symbol = sli.stock_symbol
+           ORDER BY sh.timestamp DESC
+           LIMIT 1
+         ), 0)) AS stock_value
+       FROM StockListStocks sli
+       JOIN Stocks s ON sli.stock_symbol = s.stock_symbol
+       WHERE sli.list_id = $1`,
+      [list_id]
+    );
+
+    const stockData = stockItems.rows;
+
+    // Calculate total value of the stock list
+    const totalValue = stockData.reduce((sum, stock) => sum + stock.stock_value, 0);
+
+    res.json({
+      stockList: stockListDetails,
+      totalValue,
+      stockItems: stockData,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock list statistics" });
+  }
+});
+
+// Get all stock lists created by a user *
 app.get("/stocklists/:user_id", async (req, res) => {
   const { user_id } = req.params;
   try {
@@ -795,7 +869,7 @@ app.get("/stocklists/:user_id", async (req, res) => {
   }
 });
 
-// Delete a stock list
+// Delete a stock list *
 app.delete("/stocklists", async (req, res) => {
   const { list_id, user_id } = req.body;
 
@@ -827,24 +901,15 @@ app.delete("/stocklists", async (req, res) => {
   }
 });
 
-// Get all public stock lists
-app.get("/stocklists/public", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT *
-        FROM StockLists
-        WHERE visibility = 'public'`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch public stock lists" });
-  }
-});
-
-// Get all shared stock lists for a user, ordered by name
+// Get all shared stock lists for a user, ordered by name *
 app.get("/stocklists/shared/:user_id", async (req, res) => {
   const { user_id } = req.params;
+
+  // Ensure user_id is treated as an integer
+  const parsedUserId = parseInt(user_id, 10);
+  if (isNaN(parsedUserId)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
 
   try {
     // Fetch shared stock lists the user has access to, ordered by name
@@ -852,11 +917,11 @@ app.get("/stocklists/shared/:user_id", async (req, res) => {
       `SELECT sl.list_id, sl.name, sl.created_at, sl.visibility, u.username AS owner
        FROM StockLists sl
        JOIN Users u ON sl.user_id = u.id
-       WHERE sl.visibility = 'shared' AND sl.list_id IN (
+       WHERE sl.visibility = 'private' AND sl.list_id IN (
          SELECT list_id FROM Visibility WHERE user_id = $1
        )
        ORDER BY sl.name ASC`,
-      [user_id]
+      [parsedUserId]
     );
 
     res.json(result.rows);
@@ -886,7 +951,7 @@ app.get("/stocklists/data/:list_id", async (req, res) => {
 
     // Fetch stock items with the latest stock price and company name
     const stockItems = await pool.query(
-      `SELECT sli.stock_symbol, sli.quantity, s.company_name,
+      `SELECT sli.stock_symbol, sli.quantity, s.stock_name,
               COALESCE(sh.close_price, 0) AS latest_price
        FROM StockListStocks sli
        JOIN Stocks s ON sli.stock_symbol = s.stock_symbol
@@ -911,7 +976,7 @@ app.get("/stocklists/data/:list_id", async (req, res) => {
   }
 });
 
-// Add a stock to a stock list
+// Add a stock to a stock list *
 app.post("/stocklists/:list_id/stocks", async (req, res) => {
   const { list_id, stock_symbol, quantity, user_id } = req.body;
 
@@ -968,7 +1033,7 @@ app.post("/stocklists/:list_id/stocks", async (req, res) => {
   }
 });
 
-// Remove a stock from a stock list
+// Remove a stock from a stock list *
 app.delete("/stocklists/:list_id/stocks", async (req, res) => {
   const { list_id, stock_symbol, user_id } = req.body;
 
@@ -1005,7 +1070,7 @@ app.delete("/stocklists/:list_id/stocks", async (req, res) => {
   }
 });
 
-// Share a stock list with another user
+// Share a stock list with another user *
 app.post("/stocklists/:list_id/share", async (req, res) => {
   const { list_id, user_id, current_user_id } = req.body;
 
@@ -1059,71 +1124,6 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
   }
 });
 
-// Statistics of Stock List
-app.get("/api/stocklist/:list_id/statistics", async (req, res) => {
-  const { list_id } = req.params;
-  const { user_id } = req.query; // User ID to check access
-
-  try {
-    // Verify if the user has access to the stock list
-    const accessCheck = await pool.query(
-      `SELECT sl.list_id, sl.name AS list_name, sl.visibility, u.username AS creator_name
-       FROM StockLists sl
-       JOIN Users u ON sl.user_id = u.id
-       WHERE sl.list_id = $1
-       AND (sl.user_id = $2 OR sl.visibility = 'public' OR EXISTS (
-         SELECT 1 FROM Visibility v WHERE v.list_id = sl.list_id AND v.user_id = $2
-       ))`,
-      [list_id, user_id]
-    );
-
-    if (accessCheck.rows.length === 0) {
-      return res.status(403).json({ error: "You do not have access to this stock list" });
-    }
-
-    const stockListDetails = accessCheck.rows[0];
-
-    // Fetch stock items and calculate their statistics
-    const stockItems = await pool.query(
-      `SELECT 
-         sli.stock_symbol,
-         sli.quantity,
-         s.company_name,
-         COALESCE((
-           SELECT sh.close_price
-           FROM StockHistory sh
-           WHERE sh.stock_symbol = sli.stock_symbol
-           ORDER BY sh.timestamp DESC
-           LIMIT 1
-         ), 0) AS latest_price,
-         (sli.quantity * COALESCE((
-           SELECT sh.close_price
-           FROM StockHistory sh
-           WHERE sh.stock_symbol = sli.stock_symbol
-           ORDER BY sh.timestamp DESC
-           LIMIT 1
-         ), 0)) AS stock_value
-       FROM StockListStocks sli
-       JOIN Stocks s ON sli.stock_symbol = s.stock_symbol
-       WHERE sli.list_id = $1`,
-      [list_id]
-    );
-
-    const stockData = stockItems.rows;
-
-    // Calculate total value of the stock list
-    const totalValue = stockData.reduce((sum, stock) => sum + stock.stock_value, 0);
-
-    res.json({
-      stockList: stockListDetails,
-      totalValue,
-      stockItems: stockData,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch stock list statistics" });
-  }
-});
 // -- Friends management --
 
 // Create or accept a friend request
