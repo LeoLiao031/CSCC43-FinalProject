@@ -143,7 +143,7 @@ app.get("/portfolios/:user_id", async (req, res) => {
   }
 });
 
-// Get performance statistics for a portfolio *
+// Get performance for a portfolio *
 app.get("/portfolios/:port_id/performance", async (req, res) => {
   const { port_id } = req.params;
 
@@ -210,6 +210,131 @@ app.get("/portfolios/:port_id/performance", async (req, res) => {
   } catch (err) {
     console.error("Error fetching portfolio performance:", err);
     res.status(500).json({ error: "Failed to fetch portfolio performance statistics" });
+  }
+});
+
+// Get portfolio statistics
+app.get("/portfolios/:port_id/statistics", async (req, res) => {
+  const { port_id } = req.params;
+  const { start_date, end_date } = req.query;
+
+  try {
+    // Validate portfolio existence
+    const portfolioCheck = await pool.query(
+      `SELECT port_id 
+       FROM Portfolios 
+       WHERE port_id = $1`,
+      [port_id]
+    );
+
+    if (portfolioCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Portfolio not found" });
+    }
+
+    // Fetch portfolio stock holdings
+    const stockHoldings = await pool.query(
+      `SELECT sh.stock_symbol, sh.quantity
+       FROM Stockholdings sh
+       WHERE sh.port_id = $1`,
+      [port_id]
+    );
+
+    if (stockHoldings.rows.length === 0) {
+      return res.status(404).json({ error: "No stocks found in the portfolio" });
+    }
+
+    const stockSymbols = stockHoldings.rows.map((row) => row.stock_symbol);
+
+    // Calculate Coefficient of Variation and Beta for Each Stock
+    const stockStatisticsQuery = `
+      WITH StockReturns AS (
+        SELECT 
+            s.stock_symbol,
+            s.timestamp,
+            (s.close_price - LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp)) /
+            LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp) AS stock_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+      ),
+      MarketReturns AS (
+        SELECT 
+            s.timestamp,
+            AVG(s.close_price) AS market_price,
+            (AVG(s.close_price) - LAG(AVG(s.close_price)) OVER (ORDER BY s.timestamp)) /
+            LAG(AVG(s.close_price)) OVER (ORDER BY s.timestamp) AS market_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+        GROUP BY s.timestamp
+      )
+      SELECT 
+          sr.stock_symbol,
+          STDDEV(sr.stock_return) / AVG(ABS(sr.stock_return)) AS coefficient_of_variation,
+          COVAR_SAMP(sr.stock_return, mr.market_return) / VAR_SAMP(mr.market_return) AS beta
+      FROM StockReturns sr
+      JOIN MarketReturns mr ON sr.timestamp = mr.timestamp
+      GROUP BY sr.stock_symbol;
+    `;
+
+    const stockStatisticsResult = await pool.query(stockStatisticsQuery, [
+      stockSymbols,
+      start_date || "2015-01-01",
+      end_date || new Date().toISOString(),
+    ]);
+
+    const stockStatistics = stockStatisticsResult.rows;
+
+    // Calculate Covariance and Correlation Matrix
+    const covarianceCorrelationQuery = `
+      WITH StockReturns AS (
+        SELECT 
+            s.stock_symbol,
+            s.timestamp,
+            (s.close_price - LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp)) /
+            LAG(s.close_price) OVER (PARTITION BY s.stock_symbol ORDER BY s.timestamp) AS stock_return
+        FROM StockHistory s
+        WHERE s.stock_symbol = ANY($1::text[])
+          AND s.timestamp BETWEEN $2 AND $3
+      ),
+      CombinedData AS (
+        SELECT
+            sr1.stock_symbol AS stock1,
+            sr2.stock_symbol AS stock2,
+            sr1.stock_return AS return1,
+            sr2.stock_return AS return2
+        FROM StockReturns sr1
+        JOIN StockReturns sr2
+          ON sr1.timestamp = sr2.timestamp
+        WHERE sr1.stock_symbol = ANY($1::text[])
+          AND sr2.stock_symbol = ANY($1::text[])
+      )
+      SELECT
+          cd.stock1,
+          cd.stock2,
+          COVAR_SAMP(cd.return1, cd.return2) AS covariance,
+          CORR(cd.return1, cd.return2) AS correlation
+      FROM CombinedData cd
+      GROUP BY cd.stock1, cd.stock2;
+    `;
+
+    const covarianceCorrelationResult = await pool.query(covarianceCorrelationQuery, [
+      stockSymbols,
+      start_date || "1970-01-01",
+      end_date || new Date().toISOString(),
+    ]);
+
+    const covarianceCorrelationMatrix = covarianceCorrelationResult.rows;
+
+    // Return the results
+    res.json({
+      portfolioId: port_id,
+      stockStatistics,
+      covarianceCorrelationMatrix,
+    });
+  } catch (err) {
+    console.error("Error fetching portfolio statistics:", err.message, err.stack);
+    res.status(500).json({ error: "Failed to fetch portfolio statistics" });
   }
 });
 
