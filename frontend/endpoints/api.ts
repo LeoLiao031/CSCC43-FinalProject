@@ -187,8 +187,13 @@ export const shareStockList = async (listId: number, username: string, currentUs
   return response.json();
 };
 
-export const getStockListStatistics = async (listId: string, userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/stocklist/${listId}/statistics?user_id=${userId}`);
+export const getStockListStatistics = async (listId: number, userId: number, startDate?: string, endDate?: string) => {
+  const url = new URL(`${API_BASE_URL}/stocklists/${listId}/statistics`);
+  url.searchParams.append('user_id', userId.toString());
+  if (startDate) url.searchParams.append('start_date', startDate);
+  if (endDate) url.searchParams.append('end_date', endDate);
+  
+  const response = await fetch(url.toString());
   return response.json();
 };
 
@@ -308,5 +313,18 @@ export const deleteReview = async (reviewId: number, userId: number) => {
 
 export const getReviews = async (userId: number) => {
   const response = await fetch(`${API_BASE_URL}/reviews/${userId}`);
+  return response.json();
+};
+
+// Deny a friend request
+export const denyFriendRequest = async (requesterUsername: string, receiverUsername: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/deny`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      req_friend_name: requesterUsername,
+      rec_friend_name: receiverUsername
+    }),
+  });
   return response.json();
 };

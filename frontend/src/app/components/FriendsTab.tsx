@@ -9,7 +9,8 @@ import {
   removeFriend,
   withdrawFriendRequest,
   searchFriends,
-  sendFriendRequest
+  sendFriendRequest,
+  denyFriendRequest
 } from "../../../endpoints/api";
 import SearchIcon from '@mui/icons-material/Search';
 
@@ -174,6 +175,21 @@ export default function FriendsTab({ loginStatus, userId, username }: FriendsTab
     }
   };
 
+  const handleDenyRequest = async (requesterUsername: string) => {
+    try {
+      const response = await denyFriendRequest(requesterUsername, username);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess("Friend request denied successfully");
+      fetchFriendsData();
+    } catch (error) {
+      console.error('Error denying friend request:', error);
+      setError("Failed to deny friend request");
+    }
+  };
+
   if (!loginStatus) {
     return (
       <Box sx={{ p: 3 }}>
@@ -243,12 +259,20 @@ export default function FriendsTab({ loginStatus, userId, username }: FriendsTab
                 <ListItem
                   key={request.relation_id}
                   secondaryAction={
-                    <Button
-                      color="primary"
-                      onClick={() => handleAcceptRequest(request.requester_username)}
-                    >
-                      Accept
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        color="primary"
+                        onClick={() => handleAcceptRequest(request.requester_username)}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        color="error"
+                        onClick={() => handleDenyRequest(request.requester_username)}
+                      >
+                        Deny
+                      </Button>
+                    </Box>
                   }
                 >
                   <ListItemText primary={request.requester_username} />
