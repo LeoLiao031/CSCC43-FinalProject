@@ -61,7 +61,6 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
   const [detailedLists, setDetailedLists] = useState<{ [key: number]: DetailedStockList }>({});
   const [friends, setFriends] = useState<Friend[]>([]);
   const [selectedFriend, setSelectedFriend] = useState<number | null>(null);
-  const [sharingListId, setSharingListId] = useState<number | null>(null);
   const [newStockQuantity, setNewStockQuantity] = useState<number>(1);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedListForSharing, setSelectedListForSharing] = useState<StockList | null>(null);
@@ -421,7 +420,6 @@ export default function StockListsTab({ loginStatus, userId, username }: StockLi
                           {list.visibility === "private" && (
                             <IconButton
                               onClick={() => {
-                                setSharingListId(list.list_id);
                                 setSelectedFriend(null);
                               }}
                               color="primary"
