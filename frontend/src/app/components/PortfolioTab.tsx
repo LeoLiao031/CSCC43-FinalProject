@@ -1,7 +1,7 @@
 "use client";
 import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo, getStockHistory } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo, getStockHistory, getStockPrediction } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -10,6 +10,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import TableChartIcon from '@mui/icons-material/TableChart';
+import TimelineIcon from '@mui/icons-material/Timeline';
 
 interface PortfolioTabProps {
   loginStatus: boolean;
@@ -42,6 +43,15 @@ interface StockHistoryData {
   volume: number;
 }
 
+interface StockPrediction {
+  stock_symbol: string;
+  movingAverage: number;
+  historicalData: {
+    date: string;
+    close_price: number;
+  }[];
+}
+
 export default function PortfolioTab({ loginStatus, username, userId }: PortfolioTabProps) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [newPortfolioName, setNewPortfolioName] = useState("");
@@ -70,6 +80,10 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [isLoadingStockHistory, setIsLoadingStockHistory] = useState(false);
+  const [selectedStockForPrediction, setSelectedStockForPrediction] = useState<{ symbol: string; portfolioId: number } | null>(null);
+  const [stockPrediction, setStockPrediction] = useState<StockPrediction | null>(null);
+  const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
+  const [predictionPeriod, setPredictionPeriod] = useState<number>(7);
 
   useEffect(() => {
     if (loginStatus && username) {
@@ -342,6 +356,35 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
     }
   };
 
+  const handleOpenPredictionDialog = (symbol: string, portfolioId: number) => {
+    setSelectedStockForPrediction({ symbol, portfolioId });
+    setStockPrediction(null);
+  };
+
+  const handleClosePredictionDialog = () => {
+    setSelectedStockForPrediction(null);
+    setStockPrediction(null);
+  };
+
+  const handleFetchPrediction = async () => {
+    if (!selectedStockForPrediction) return;
+
+    setIsLoadingPrediction(true);
+    try {
+      const response = await getStockPrediction(selectedStockForPrediction.symbol, predictionPeriod);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setStockPrediction(response);
+    } catch (error) {
+      console.error('Error fetching stock prediction:', error);
+      setError("Failed to fetch stock prediction");
+    } finally {
+      setIsLoadingPrediction(false);
+    }
+  };
+
   if (!loginStatus) {
     return (
       <Box sx={{ p: 3 }}>
@@ -516,6 +559,12 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
                                     onClick={() => handleOpenStockDialog(holding.stock_symbol || "", portfolio.port_id)}
                                   >
                                     <TableChartIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleOpenPredictionDialog(holding.stock_symbol || "", portfolio.port_id)}
+                                  >
+                                    <TimelineIcon />
                                   </IconButton>
                                   <IconButton
                                     size="small"
@@ -776,6 +825,70 @@ export default function PortfolioTab({ loginStatus, username, userId }: Portfoli
             disabled={!startDate || !endDate || isLoadingStockHistory}
           >
             Fetch History
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Prediction Dialog */}
+      <Dialog 
+        open={!!selectedStockForPrediction} 
+        onClose={handleClosePredictionDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Price Prediction for {selectedStockForPrediction?.symbol}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2, mb: 2 }}>
+            <TextField
+              type="number"
+              label="Moving Average Period (days)"
+              value={predictionPeriod}
+              onChange={(e) => setPredictionPeriod(Math.max(1, parseInt(e.target.value) || 7))}
+              inputProps={{ min: 1 }}
+              sx={{ width: '100%' }}
+            />
+          </Box>
+          {isLoadingPrediction ? (
+            <Typography>Calculating prediction...</Typography>
+          ) : stockPrediction ? (
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Moving Average Prediction: ${stockPrediction.movingAverage.toFixed(2)}
+              </Typography>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                Historical Data:
+              </Typography>
+              <TableContainer component={Paper}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell align="right">Close Price</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {stockPrediction.historicalData.map((data, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{new Date(data.date).toLocaleDateString()}</TableCell>
+                        <TableCell align="right">${data.close_price}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePredictionDialog}>Close</Button>
+          <Button 
+            onClick={handleFetchPrediction}
+            variant="contained"
+            disabled={isLoadingPrediction}
+          >
+            Calculate Prediction
           </Button>
         </DialogActions>
       </Dialog>

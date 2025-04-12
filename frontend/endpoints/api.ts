@@ -350,3 +350,25 @@ export const getStockHistory = async (stockSymbol: string, startDate: string, en
     return { error: 'Failed to fetch stock history' };
   }
 };
+
+export const getStockPrediction = async (stockSymbol: string, period: number = 7) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/stocks/${stockSymbol}/predict?period=${period}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return { error: errorData.error || 'Failed to fetch stock prediction' };
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching stock prediction:', error);
+    return { error: 'Failed to fetch stock prediction' };
+  }
+};
