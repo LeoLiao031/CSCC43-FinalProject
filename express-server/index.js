@@ -50,7 +50,7 @@ app.get("/users/:username", async (req, res) => {
 app.get("/users/search/:query", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM Users WHERE username ILIKE $1`,
+      `SELECT username, email FROM Users WHERE username ILIKE $1`, // edit for needed fields 
       [`${req.params.query}%`]
     );
     res.json(result.rows);
@@ -342,7 +342,337 @@ app.delete("/portfolios/stocks/sell", async (req, res) => {
   }
 });
 
-// TODO: Implement the remaining stock management routes (Figure out recent prices, predictions)
+// -- Stock History Data --
+
+// Add a new stock to StockHistory (specific timestamp)
+app.post("/stocks", async (req, res) => {
+  const { stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume } = req.body;
+
+  try {
+    // Insert a new stock history record
+    const result = await pool.query(
+      `INSERT INTO StockHistory (stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING history_id, stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume`,
+      [stock_symbol, timestamp, open_price, high_price, low_price, close_price, volume]
+    );
+
+    res.json({
+      message: "Stock history added successfully",
+      stockHistory: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add stock history" });
+  }
+});
+
+// Get stock data
+app.get("/stocks/:stock_symbol", async (req, res) => {
+  const { stock_symbol } = req.params;
+  const { date } = req.query; // Optional query parameter for filtering by date
+
+  try {
+    let query = `SELECT * FROM StockHistory WHERE stock_symbol = $1`;
+    const params = [stock_symbol];
+
+    if (date) {
+      query += ` AND DATE(timestamp) = $2`;
+      params.push(date);
+    }
+
+    query += ` ORDER BY timestamp DESC`;
+
+    const result = await pool.query(query, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock data" });
+  }
+});
+
+// TODO: Get prediction data for stock performance 
+
+// -- Stock Lists --
+
+// Create a new stock list
+app.post("/stocklists", async (req, res) => {
+  const { list_name, username, visibility } = req.body;
+
+  try {
+    // Retrieve the user_id for the given username
+    const userResult = await pool.query(
+      `SELECT id 
+       FROM Users 
+       WHERE username = $1`,
+      [username]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user_id = userResult.rows[0].id;
+
+    // Insert the new stock list
+    const result = await pool.query(
+      `INSERT INTO StockLists (user_id, name, visibility)
+       VALUES ($1, $2, $3)
+       RETURNING list_id, name, visibility, created_at`,
+      [user_id, list_name, visibility || 'private']
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Stock list creation failed" });
+  }
+});
+
+// Get all stock lists created by a user
+app.get("/stocklists/:username", async (req, res) => {
+  const { username } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * 
+       FROM StockLists 
+       WHERE user_id = (SELECT id FROM Users WHERE username = $1)`,
+      [username]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock lists" });
+  }
+});
+
+// Delete a stock list
+app.delete("/stocklists", async (req, res) => {
+  const { list_id, username } = req.body;
+
+  try {
+    // Retrieve the user_id for the given username
+    const userResult = await pool.query(
+      `SELECT id FROM Users WHERE username = $1`,
+      [username]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user_id = userResult.rows[0].id;
+
+    // Verify that the user owns the stock list
+    const listResult = await pool.query(
+      `SELECT user_id FROM StockLists WHERE list_id = $1`,
+      [list_id]
+    );
+
+    if (listResult.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
+    }
+
+    if (listResult.rows[0].user_id !== user_id) {
+      return res.status(403).json({ error: "You are not authorized to delete this stock list" });
+    }
+
+    // Delete the stock list
+    const deleteResult = await pool.query(
+      `DELETE FROM StockLists WHERE list_id = $1`,
+      [list_id]
+    );
+
+    res.json({ message: "Stock list deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete stock list" });
+  }
+});
+
+// Get all public stock lists
+app.get("/stocklists/public", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT *
+        FROM StockLists
+        WHERE visibility = 'public'`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch public stock lists" });
+  }
+});
+
+// Get all shared stock lists for a user
+app.get("/stocklists/shared/:username", async (req, res) => {
+  const { username } = req.params;
+
+  try {
+    // Retrieve the user_id for the given username
+    const userResult = await pool.query(
+      `SELECT id FROM Users WHERE username = $1`,
+      [username]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user_id = userResult.rows[0].user_id;
+
+    // Fetch shared stock lists the user has access to
+    const result = await pool.query(
+      `SELECT sl.list_id, sl.name, sl.created_at, sl.visibility, u.username AS owner
+       FROM StockLists sl
+       JOIN Users u ON sl.user_id = u.id
+       WHERE sl.visibility = 'shared' AND sl.list_id IN (
+         SELECT list_id FROM Visibility WHERE user_id = $1
+       )`,
+      [user_id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch shared stock lists" });
+  }
+});
+
+// Get data for a stock list
+app.get("/stocklists/data/:list_id", async (req, res) => {
+  const { list_id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT s.stock_symbol, s.quantity, sh.timestamp, sh.open_price, sh.high_price, sh.low_price, sh.close_price, sh.volume
+        FROM StockListStocks s
+        JOIN StockHistory sh ON s.stock_symbol = sh.stock_symbol
+        WHERE s.list_id = $1`,
+      [list_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "No stocks found for this list" });
+    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock list data" });
+  }
+});
+
+// Add a stock to a stock list
+app.post("/stocklists/:list_id/stocks", async (req, res) => {
+  const { list_id, stock_symbol, quantity } = req.body;
+  try {
+    // Check if the stock is already in the list
+    const checkResult = await pool.query(
+      `SELECT * FROM StockListStocks WHERE list_id = $1 AND stock_symbol = $2`,
+      [list_id, stock_symbol]
+    );
+
+    if (checkResult.rows.length > 0) {
+      return res.status(409).json({ error: "Stock already exists in the list" });
+    }
+    
+    // Insert the stock into the stock list
+    const result = await pool.query(
+      `INSERT INTO StockListStocks (list_id, stock_symbol, quantity)
+        VALUES ($1, $2, $3)
+        RETURNING list_id, stock_symbol, quantity`,
+      [list_id, stock_symbol, quantity]
+    );
+  
+    res.json({
+      message: "Stock added to the list successfully",
+      stock: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add stock to the list" });
+  }
+});
+
+// Remove a stock from a stock list
+app.delete("/stocklists/:list_id/stocks", async (req, res) => {
+  const { list_id, stock_symbol } = req.body;
+  try {
+    // Delete the stock from the stock list
+    const result = await pool.query(
+      `DELETE FROM StockListStocks
+        WHERE list_id = $1 AND stock_symbol = $2`,
+      [list_id, stock_symbol]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Stock not found in the list" });
+    }
+    
+    res.json({ message: "Stock removed from the list successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove stock from the list" });
+  }
+});
+
+// Share a stock list with another user
+app.post("/stocklists/:list_id/share", async (req, res) => {
+  const { list_id, username } = req.body;
+  try {
+    // Retrieve the user_id for the given username
+    const userResult = await pool.query(
+      `SELECT id FROM Users WHERE username = $1`,
+      [username]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user_id = userResult.rows[0].id;
+
+    // Check if the stock list exists
+    const listResult = await pool.query(
+      `SELECT 1 FROM StockLists WHERE list_id = $1`,
+      [list_id]
+    );
+
+    if (listResult.rows.length === 0) {
+      return res.status(404).json({ error: "Stock list not found" });
+    }
+
+    // Check if the user already has access to the list
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM Visibility WHERE list_id = $1 AND user_id = $2`,
+      [list_id, user_id]
+    );
+
+    if (accessCheck.rows.length > 0) {
+      return res.status(409).json({ error: "User already has access to this list" });
+    }
+
+    // Share the stock list with the user
+    const result = await pool.query(
+      `INSERT INTO Visibility (list_id, user_id)
+        VALUES ($1, $2)
+        RETURNING list_id, user_id`,
+      [list_id, user_id]
+    );
+
+    res.json({
+      message: "Stock list shared successfully",
+      sharedList: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to share stock list" });
+  }
+});
 
 // -- Friends management --
 
