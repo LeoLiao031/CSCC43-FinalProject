@@ -15,18 +15,18 @@ import SearchIcon from '@mui/icons-material/Search';
 
 interface FriendsTabProps {
   loginStatus: boolean;
-  userId: string;
+  userId: number;
+  username: string;
 }
 
 interface Friend {
-  user_id: string;
-  username: string;
+  friend_username: string;
 }
 
 interface FriendRequest {
   relation_id: string;
-  user_id: string;
-  username: string;
+  requester_username: string;
+  recipient_username: string;
 }
 
 interface SearchResult {
@@ -34,7 +34,7 @@ interface SearchResult {
   username: string;
 }
 
-export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
+export default function FriendsTab({ loginStatus, userId, username }: FriendsTabProps) {
   const [selectedTab, setSelectedTab] = useState(0);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
@@ -45,13 +45,13 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
   const [success, setSuccess] = useState("");
 
   const fetchFriendsData = async () => {
-    if (!loginStatus || !userId) return;
+    if (!loginStatus || !userId || !username) return;
 
     try {
       const [friendsList, incoming, outgoing] = await Promise.all([
-        getFriendsList(userId),
-        getIncomingFriendRequests(userId),
-        getOutgoingFriendRequests(userId)
+        getFriendsList(username),
+        getIncomingFriendRequests(username),
+        getOutgoingFriendRequests(username)
       ]);
 
       if (friendsList.error) {
@@ -112,9 +112,9 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
     }
   };
 
-  const handleSendFriendRequest = async (recFriendId: string) => {
+  const handleSendFriendRequest = async (recFriendName: string) => {
     try {
-      const response = await sendFriendRequest(userId, recFriendId);
+      const response = await sendFriendRequest(username, recFriendName);
       if (response.error) {
         setError(response.error);
         return;
@@ -129,9 +129,9 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
     }
   };
 
-  const handleAcceptRequest = async (reqFriendId: string) => {
+  const handleAcceptRequest = async (reqFriendName: string) => {
     try {
-      const response = await acceptFriendRequest(reqFriendId, userId);
+      const response = await acceptFriendRequest(reqFriendName, username);
       if (response.error) {
         setError(response.error);
         return;
@@ -146,7 +146,7 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
 
   const handleRemoveFriend = async (friendId: string) => {
     try {
-      const response = await removeFriend(userId, friendId);
+      const response = await removeFriend(username, friendId);
       if (response.error) {
         setError(response.error);
         return;
@@ -161,7 +161,7 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
 
   const handleWithdrawRequest = async (recFriendId: string) => {
     try {
-      const response = await withdrawFriendRequest(userId, recFriendId);
+      const response = await withdrawFriendRequest(username, recFriendId);
       if (response.error) {
         setError(response.error);
         return;
@@ -215,19 +215,19 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
             {friends.length === 0 ? (
               <Typography>You don&apos;t have any friends yet.</Typography>
             ) : (
-              friends.map((friend) => (
+              friends.map((friend, index) => (
                 <ListItem
-                  key={friend.user_id}
+                  key={index}
                   secondaryAction={
                     <Button
                       color="error"
-                      onClick={() => handleRemoveFriend(friend.user_id)}
+                      onClick={() => handleRemoveFriend(friend.friend_username)}
                     >
                       Remove
                     </Button>
                   }
                 >
-                  <ListItemText primary={friend.username} />
+                  <ListItemText primary={friend.friend_username} />
                 </ListItem>
               ))
             )}
@@ -245,13 +245,13 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
                   secondaryAction={
                     <Button
                       color="primary"
-                      onClick={() => handleAcceptRequest(request.user_id)}
+                      onClick={() => handleAcceptRequest(request.requester_username)}
                     >
                       Accept
                     </Button>
                   }
                 >
-                  <ListItemText primary={request.username} />
+                  <ListItemText primary={request.requester_username} />
                 </ListItem>
               ))
             )}
@@ -269,13 +269,13 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
                   secondaryAction={
                     <Button
                       color="error"
-                      onClick={() => handleWithdrawRequest(request.user_id)}
+                      onClick={() => handleWithdrawRequest(request.recipient_username)}
                     >
                       Withdraw
                     </Button>
                   }
                 >
-                  <ListItemText primary={request.username} />
+                  <ListItemText primary={request.recipient_username} />
                 </ListItem>
               ))
             )}
@@ -316,7 +316,7 @@ export default function FriendsTab({ loginStatus, userId }: FriendsTabProps) {
                     secondaryAction={
                       <Button
                         color="primary"
-                        onClick={() => handleSendFriendRequest(user.user_id)}
+                        onClick={() => handleSendFriendRequest(user.username)}
                       >
                         Add Friend
                       </Button>

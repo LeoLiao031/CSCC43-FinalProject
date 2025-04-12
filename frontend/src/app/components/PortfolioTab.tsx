@@ -1,35 +1,60 @@
 "use client";
-import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails } from "@mui/material";
+import { Box, Typography, TextField, Button, Alert, Divider, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Accordion, AccordionSummary, AccordionDetails, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 import { useState, useEffect } from "react";
-import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash } from "../../../endpoints/api";
+import { createPortfolio, deletePortfolio, getPortfolios, depositCash, transferCash, withdrawCash, buyStock, sellStock, getPortfolioInfo } from "../../../endpoints/api";
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import RemoveIcon from '@mui/icons-material/Remove';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 
 interface PortfolioTabProps {
   loginStatus: boolean;
   username: string;
+  userId: number;
+}
+
+interface StockHolding {
+  stock_symbol: string | null;
+  quantity: number | null;
+  close_price: number | null;
+  stock_value: number | null;
 }
 
 interface Portfolio {
+  port_id: number;
   port_name: string;
   cash_dep: number;
-  username: string;
+  stocks_value: number;
+  total_value: number;
+  stock_holdings: StockHolding[];
 }
 
-export default function PortfolioTab({ loginStatus, username }: PortfolioTabProps) {
+export default function PortfolioTab({ loginStatus, username, userId }: PortfolioTabProps) {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [newPortfolioName, setNewPortfolioName] = useState("");
   const [initialDeposit, setInitialDeposit] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForDeposit, setSelectedPortfolioForDeposit] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForTransfer, setSelectedPortfolioForTransfer] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForWithdraw, setSelectedPortfolioForWithdraw] = useState<Portfolio | null>(null);
   const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferAmount, setTransferAmount] = useState("");
-  const [targetPortfolio, setTargetPortfolio] = useState("");
+  const [targetPortfolio, setTargetPortfolio] = useState<Portfolio | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedPortfolioForBuy, setSelectedPortfolioForBuy] = useState<Portfolio | null>(null);
+  const [selectedPortfolioForSell, setSelectedPortfolioForSell] = useState<Portfolio | null>(null);
+  const [buyStockSymbol, setBuyStockSymbol] = useState("");
+  const [buyQuantity, setBuyQuantity] = useState("");
+  const [sellStockSymbol, setSellStockSymbol] = useState("");
+  const [sellQuantity, setSellQuantity] = useState("");
+  const [expandedPortfolio, setExpandedPortfolio] = useState<number | null>(null);
+  const [detailedPortfolios, setDetailedPortfolios] = useState<{ [key: number]: Portfolio }>({});
 
   useEffect(() => {
     if (loginStatus && username) {
@@ -41,7 +66,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     setIsLoading(true);
     setError("");
     try {
-      const response = await getPortfolios(username);
+      const response = await getPortfolios(userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -72,7 +97,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
 
     try {
-      const response = await createPortfolio(newPortfolioName, depositAmount, username);
+      const response = await createPortfolio(newPortfolioName, depositAmount, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -89,7 +114,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
 
   const handleDeletePortfolio = async (portfolioName: string) => {
     try {
-      const response = await deletePortfolio(portfolioName, username);
+      const response = await deletePortfolio(portfolioName, userId);
       if (response.error) {
         setError(response.error);
         return;
@@ -102,7 +127,7 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
   };
 
-  const handleDeposit = async (portfolioName: string) => {
+  const handleDeposit = async (portfolioId: number) => {
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount <= 0) {
       setError("Please enter a valid deposit amount");
@@ -110,14 +135,14 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
 
     try {
-      const response = await depositCash(portfolioName, username, amount);
+      const response = await depositCash(portfolioId, userId, amount);
       if (response.error) {
         setError(response.error);
         return;
       }
-      setSuccess(`Successfully deposited $${amount} into ${portfolioName}`);
+      setSuccess(`Successfully deposited $${amount}`);
       setDepositAmount("");
-      setSelectedPortfolio(null);
+      setSelectedPortfolioForDeposit(null);
       fetchPortfolios();
     } catch (error) {
       console.error('Error:', error);
@@ -125,8 +150,31 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
     }
   };
 
+  const handleWithdraw = async (portfolioId: number) => {
+    const amount = parseFloat(withdrawAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Please enter a valid withdrawal amount");
+      return;
+    }
+
+    try {
+      const response = await withdrawCash(portfolioId, userId, amount);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully withdrew $${amount}`);
+      setWithdrawAmount("");
+      setSelectedPortfolioForWithdraw(null);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to withdraw cash");
+    }
+  };
+
   const handleTransfer = async () => {
-    if (!selectedPortfolio) return;
+    if (!selectedPortfolioForTransfer) return;
 
     const amount = parseFloat(transferAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -141,23 +189,108 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
 
     try {
       const response = await transferCash(
-        selectedPortfolio.port_name,
-        targetPortfolio,
-        username,
+        selectedPortfolioForTransfer.port_id,
+        targetPortfolio.port_id,
+        userId,
         amount
       );
       if (response.error) {
         setError(response.error);
         return;
       }
-      setSuccess(`Successfully transferred $${amount} to ${targetPortfolio}`);
+      setSuccess(`Successfully transferred $${amount} to ${targetPortfolio.port_name}`);
       setTransferAmount("");
-      setTargetPortfolio("");
+      setTargetPortfolio(null);
       setTransferDialogOpen(false);
+      setSelectedPortfolioForTransfer(null);
       fetchPortfolios();
     } catch (error) {
       console.error('Error:', error);
       setError("Failed to transfer cash");
+    }
+  };
+
+  const handleBuyStock = async (portfolioId: number) => {
+    const quantity = parseInt(buyQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setError("Please enter a valid quantity");
+      return;
+    }
+
+    if (!buyStockSymbol.trim()) {
+      setError("Please enter a valid stock symbol");
+      return;
+    }
+
+    try {
+      const response = await buyStock(portfolioId, buyStockSymbol, quantity, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully bought ${quantity} shares of ${buyStockSymbol}`);
+      setBuyStockSymbol("");
+      setBuyQuantity("");
+      setSelectedPortfolioForBuy(null);
+      await fetchDetailedPortfolio(portfolioId);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to buy stock");
+    }
+  };
+
+  const handleSellStock = async (portfolioId: number) => {
+    const quantity = parseInt(sellQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setError("Please enter a valid quantity");
+      return;
+    }
+
+    if (!sellStockSymbol.trim()) {
+      setError("Please enter a valid stock symbol");
+      return;
+    }
+
+    try {
+      const response = await sellStock(portfolioId, sellStockSymbol, quantity, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setSuccess(`Successfully sold ${quantity} shares of ${sellStockSymbol}`);
+      setSellStockSymbol("");
+      setSellQuantity("");
+      setSelectedPortfolioForSell(null);
+      await fetchDetailedPortfolio(portfolioId);
+      fetchPortfolios();
+    } catch (error) {
+      console.error('Error:', error);
+      setError("Failed to sell stock");
+    }
+  };
+
+  const fetchDetailedPortfolio = async (portfolioId: number) => {
+    try {
+      const response = await getPortfolioInfo(portfolioId, userId);
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
+      setDetailedPortfolios(prev => ({
+        ...prev,
+        [portfolioId]: response
+      }));
+    } catch (error) {
+      console.error('Error fetching detailed portfolio:', error);
+      setError("Failed to fetch portfolio details");
+    }
+  };
+
+  const handleAccordionChange = (portfolioId: number) => (event: React.SyntheticEvent, isExpanded: boolean) => {
+    setExpandedPortfolio(isExpanded ? portfolioId : null);
+    if (isExpanded && !detailedPortfolios[portfolioId]) {
+      fetchDetailedPortfolio(portfolioId);
     }
   };
 
@@ -253,14 +386,20 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <IconButton
                     size="small"
-                    onClick={() => setSelectedPortfolio(portfolio)}
+                    onClick={() => setSelectedPortfolioForDeposit(portfolio)}
                   >
                     <AddIcon />
                   </IconButton>
                   <IconButton
                     size="small"
+                    onClick={() => setSelectedPortfolioForWithdraw(portfolio)}
+                  >
+                    <RemoveIcon />
+                  </IconButton>
+                  <IconButton
+                    size="small"
                     onClick={() => {
-                      setSelectedPortfolio(portfolio);
+                      setSelectedPortfolioForTransfer(portfolio);
                       setTransferDialogOpen(true);
                     }}
                   >
@@ -281,6 +420,8 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
                     display: 'none',
                   },
                 }}
+                expanded={expandedPortfolio === portfolio.port_id}
+                onChange={handleAccordionChange(portfolio.port_id)}
               >
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon />}
@@ -305,8 +446,49 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
                         Current Balance: ${portfolio.cash_dep}
                       </Typography>
                       <Typography variant="body2">
-                        Owner: {portfolio.username}
+                        Stocks Value: ${portfolio.stocks_value}
                       </Typography>
+                      <Typography variant="body2">
+                        Total Value: ${portfolio.total_value}
+                      </Typography>
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" sx={{ mb: 1 }}>
+                          Stock Holdings:
+                        </Typography>
+                        {detailedPortfolios[portfolio.port_id]?.stock_holdings?.length > 0 ? (
+                          detailedPortfolios[portfolio.port_id].stock_holdings.map((holding, index) => (
+                            holding.stock_symbol && (
+                              <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                                <Typography variant="body2">
+                                  {holding.stock_symbol}: {holding.quantity} shares @ ${holding.close_price} (${holding.stock_value})
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    setSelectedPortfolioForSell(portfolio);
+                                    setSellStockSymbol(holding.stock_symbol || "");
+                                  }}
+                                >
+                                  <TrendingDownIcon />
+                                </IconButton>
+                              </Box>
+                            )
+                          ))
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            No stocks in this portfolio
+                          </Typography>
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                        <Button
+                          variant="contained"
+                          startIcon={<TrendingUpIcon />}
+                          onClick={() => setSelectedPortfolioForBuy(portfolio)}
+                        >
+                          Buy Stock
+                        </Button>
+                      </Box>
                     </Box>
                   </Box>
                 </AccordionDetails>
@@ -317,9 +499,9 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
       )}
 
       {/* Deposit Dialog */}
-      {selectedPortfolio && (
-        <Dialog open={!!selectedPortfolio} onClose={() => setSelectedPortfolio(null)}>
-          <DialogTitle>Deposit to {selectedPortfolio.port_name}</DialogTitle>
+      {selectedPortfolioForDeposit && (
+        <Dialog open={!!selectedPortfolioForDeposit} onClose={() => setSelectedPortfolioForDeposit(null)}>
+          <DialogTitle>Deposit to {selectedPortfolioForDeposit.port_name}</DialogTitle>
           <DialogContent>
             <TextField
               autoFocus
@@ -332,15 +514,40 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setSelectedPortfolio(null)}>Cancel</Button>
-            <Button onClick={() => handleDeposit(selectedPortfolio.port_name)}>Deposit</Button>
+            <Button onClick={() => setSelectedPortfolioForDeposit(null)}>Cancel</Button>
+            <Button onClick={() => handleDeposit(selectedPortfolioForDeposit.port_id)}>Deposit</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Withdraw Dialog */}
+      {selectedPortfolioForWithdraw && (
+        <Dialog open={!!selectedPortfolioForWithdraw} onClose={() => setSelectedPortfolioForWithdraw(null)}>
+          <DialogTitle>Withdraw from {selectedPortfolioForWithdraw.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Amount"
+              type="number"
+              fullWidth
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForWithdraw(null)}>Cancel</Button>
+            <Button onClick={() => handleWithdraw(selectedPortfolioForWithdraw.port_id)}>Withdraw</Button>
           </DialogActions>
         </Dialog>
       )}
 
       {/* Transfer Dialog */}
-      <Dialog open={transferDialogOpen} onClose={() => setTransferDialogOpen(false)}>
-        <DialogTitle>Transfer from {selectedPortfolio?.port_name}</DialogTitle>
+      <Dialog open={transferDialogOpen} onClose={() => {
+        setTransferDialogOpen(false);
+        setSelectedPortfolioForTransfer(null);
+      }}>
+        <DialogTitle>Transfer from {selectedPortfolioForTransfer?.port_name}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -352,19 +559,96 @@ export default function PortfolioTab({ loginStatus, username }: PortfolioTabProp
             onChange={(e) => setTransferAmount(e.target.value)}
             sx={{ mb: 2 }}
           />
-          <TextField
-            margin="dense"
-            label="Target Portfolio"
-            fullWidth
-            value={targetPortfolio}
-            onChange={(e) => setTargetPortfolio(e.target.value)}
-          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Target Portfolio</InputLabel>
+            <Select
+              value={targetPortfolio?.port_id || ''}
+              label="Target Portfolio"
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                const selectedPortfolio = portfolios.find(p => p.port_id === selectedId);
+                setTargetPortfolio(selectedPortfolio || null);
+              }}
+            >
+              {portfolios
+                .filter(portfolio => portfolio.port_id !== selectedPortfolioForTransfer?.port_id)
+                .map(portfolio => (
+                  <MenuItem key={portfolio.port_id} value={portfolio.port_id}>
+                    {portfolio.port_name} (${portfolio.cash_dep})
+                  </MenuItem>
+                ))}
+            </Select>
+          </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setTransferDialogOpen(false);
+            setSelectedPortfolioForTransfer(null);
+            setTargetPortfolio(null);
+          }}>Cancel</Button>
           <Button onClick={handleTransfer}>Transfer</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Buy Stock Dialog */}
+      {selectedPortfolioForBuy && (
+        <Dialog open={!!selectedPortfolioForBuy} onClose={() => setSelectedPortfolioForBuy(null)}>
+          <DialogTitle>Buy Stock for {selectedPortfolioForBuy.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Stock Symbol"
+              fullWidth
+              value={buyStockSymbol}
+              onChange={(e) => setBuyStockSymbol(e.target.value.toUpperCase())}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="dense"
+              label="Quantity"
+              type="number"
+              fullWidth
+              value={buyQuantity}
+              onChange={(e) => setBuyQuantity(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForBuy(null)}>Cancel</Button>
+            <Button onClick={() => handleBuyStock(selectedPortfolioForBuy.port_id)}>Buy</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Sell Stock Dialog */}
+      {selectedPortfolioForSell && (
+        <Dialog open={!!selectedPortfolioForSell} onClose={() => setSelectedPortfolioForSell(null)}>
+          <DialogTitle>Sell Stock from {selectedPortfolioForSell.port_name}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Stock Symbol"
+              fullWidth
+              value={sellStockSymbol}
+              onChange={(e) => setSellStockSymbol(e.target.value.toUpperCase())}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="dense"
+              label="Quantity"
+              type="number"
+              fullWidth
+              value={sellQuantity}
+              onChange={(e) => setSellQuantity(e.target.value)}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedPortfolioForSell(null)}>Cancel</Button>
+            <Button onClick={() => handleSellStock(selectedPortfolioForSell.port_id)}>Sell</Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 } 

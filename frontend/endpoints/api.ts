@@ -21,7 +21,7 @@ export const searchUsers = async (query: string) => {
 };
 
 // Portfolio Management
-export const createPortfolio = async (portName: string, cashDep: number, userId: string) => {
+export const createPortfolio = async (portName: string, cashDep: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +30,7 @@ export const createPortfolio = async (portName: string, cashDep: number, userId:
   return response.json();
 };
 
-export const deletePortfolio = async (portName: string, userId: string) => {
+export const deletePortfolio = async (portName: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -39,45 +39,45 @@ export const deletePortfolio = async (portName: string, userId: string) => {
   return response.json();
 };
 
-export const getPortfolios = async (userId: string) => {
+export const getPortfolios = async (userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/${userId}`);
   return response.json();
 };
 
-export const getPortfolioInfo = async (portId: string, userId: string) => {
+export const getPortfolioInfo = async (portId: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/${portId}/${userId}`);
   return response.json();
 };
 
-export const depositCash = async (portName: string, userId: string, amount: number) => {
+export const depositCash = async (portId: number, userId: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/deposit`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ port_name: portName, user_id: userId, amount }),
+    body: JSON.stringify({ port_id: portId, user_id: userId, amount }),
   });
   return response.json();
 };
 
-export const withdrawCash = async (portName: string, userId: string, amount: number) => {
+export const withdrawCash = async (portId: number, userId: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/withdraw`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ port_name: portName, user_id: userId, amount }),
+    body: JSON.stringify({ port_id: portId, user_id: userId, amount }),
   });
   return response.json();
 };
 
-export const transferCash = async (givePort: string, getPort: string, userId: string, amount: number) => {
+export const transferCash = async (givePortId: number, getPortId: number, owner: number, amount: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/transfer`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ give_port: givePort, get_port: getPort, user_id: userId, amount }),
+    body: JSON.stringify({ give_port_id: givePortId, get_port_id: getPortId, owner: owner, amount: amount }),
   });
   return response.json();
 };
 
 // Stock Management
-export const buyStock = async (portId: string, stockSymbol: string, amount: number, userId: string) => {
+export const buyStock = async (portId: number, stockSymbol: string, amount: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/stocks/buy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -86,7 +86,7 @@ export const buyStock = async (portId: string, stockSymbol: string, amount: numb
   return response.json();
 };
 
-export const sellStock = async (portId: string, stockSymbol: string, amount: number, userId: string) => {
+export const sellStock = async (portId: number, stockSymbol: string, amount: number, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/portfolios/stocks/sell`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -122,7 +122,7 @@ export const getMovingAverage = async (stockSymbol: string, period: number = 7) 
 };
 
 // Stock Lists
-export const createStockList = async (listName: string, userId: string, visibility: string = 'private') => {
+export const createStockList = async (listName: string, userId: string, visibility: string) => {
   const response = await fetch(`${API_BASE_URL}/stocklists`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -193,20 +193,20 @@ export const getStockListStatistics = async (listId: string, userId: string) => 
 };
 
 // Friends Management
-export const sendFriendRequest = async (reqFriendId: string, recFriendId: string) => {
+export const sendFriendRequest = async (reqFriendName: string, recFriendName: string) => {
   const response = await fetch(`${API_BASE_URL}/friends`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ req_friend_id: reqFriendId, rec_friend_id: recFriendId }),
+    body: JSON.stringify({ req_friend_name: reqFriendName, rec_friend_name: recFriendName }),
   });
   return response.json();
 };
 
-export const acceptFriendRequest = async (reqFriendId: string, recFriendId: string) => {
+export const acceptFriendRequest = async (reqFriendName: string, recFriendName: string) => {
   const response = await fetch(`${API_BASE_URL}/friends/accept`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ req_friend_id: reqFriendId, rec_friend_id: recFriendId }),
+    body: JSON.stringify({ req_friend_name: reqFriendName, rec_friend_name: recFriendName }),
   });
   return response.json();
 };
@@ -220,7 +220,7 @@ export const removeFriend = async (reqFriendId: string, recFriendId: string) => 
   return response.json();
 };
 
-export const searchFriends = async (query: string, userId: string) => {
+export const searchFriends = async (query: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/friends/search/${query}/${userId}`);
   return response.json();
 };
@@ -234,23 +234,23 @@ export const withdrawFriendRequest = async (reqFriendId: string, recFriendId: st
   return response.json();
 };
 
-export const getFriendsList = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/${userId}`);
+export const getFriendsList = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/${username}`);
   return response.json();
 };
 
-export const getIncomingFriendRequests = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/requests/${userId}`);
+export const getIncomingFriendRequests = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/requests/${username}`);
   return response.json();
 };
 
-export const getOutgoingFriendRequests = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/outgoing/${userId}`);
+export const getOutgoingFriendRequests = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/outgoing/${username}`);
   return response.json();
 };
 
-export const getNonFriendsList = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/non-friends/${userId}`);
+export const getNonFriendsList = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/non-friends/${username}`);
   return response.json();
 };
 
@@ -284,5 +284,29 @@ export const deleteStockListReview = async (reviewId: string, userId: string) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId }),
   });
+  return response.json();
+};
+
+// Stock Reviews
+export const createReview = async (stockSymbol: string, rating: number, comment: string, userId: string) => {
+  const response = await fetch(`${API_BASE_URL}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stock_symbol: stockSymbol, rating, comment, user_id: userId }),
+  });
+  return response.json();
+};
+
+export const deleteReview = async (reviewId: string, userId: string) => {
+  const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  return response.json();
+};
+
+export const getReviews = async (userId: string) => {
+  const response = await fetch(`${API_BASE_URL}/reviews/${userId}`);
   return response.json();
 };
