@@ -1151,7 +1151,7 @@ app.post("/stocklists/:list_id/share", async (req, res) => {
 
 // Create or accept a friend request *
 app.post("/friends", async (req, res) => {
-  const { req_friend_id, rec_friend_id } = req.body;
+  const { req_friend_name, rec_friend_name } = req.body;
 
   try {
     // Check if the other person has already sent a friend request
@@ -1159,7 +1159,7 @@ app.post("/friends", async (req, res) => {
       `SELECT relation_id
        FROM Friends
        WHERE req_friend = $2 AND rec_friend = $1 AND pending = true`,
-      [req_friend_id, rec_friend_id]
+      [req_friend_name, rec_friend_name]
     );
 
     if (reverseCheck.rows.length > 0) {
@@ -1169,7 +1169,7 @@ app.post("/friends", async (req, res) => {
          SET pending = false
          WHERE req_friend = $2 AND rec_friend = $1
          RETURNING relation_id, req_friend, rec_friend, pending`,
-        [req_friend_id, rec_friend_id]
+        [req_friend_name, rec_friend_name]
       );
 
       return res.json({
@@ -1183,7 +1183,7 @@ app.post("/friends", async (req, res) => {
       `SELECT 1
        FROM Friends
        WHERE req_friend = $1 AND rec_friend = $2`,
-      [req_friend_id, rec_friend_id]
+      [req_friend_name, rec_friend_name]
     );
 
     if (checkResult.rows.length > 0) {
@@ -1195,7 +1195,7 @@ app.post("/friends", async (req, res) => {
       `INSERT INTO Friends (req_friend, rec_friend)
        VALUES ($1, $2)
        RETURNING relation_id, req_friend, rec_friend, pending`,
-      [req_friend_id, rec_friend_id]
+      [req_friend_name, rec_friend_name]
     );
 
     res.json({
@@ -1210,7 +1210,7 @@ app.post("/friends", async (req, res) => {
 
 // Accept friend request *
 app.put("/friends/accept", async (req, res) => {
-  const { req_friend_id, rec_friend_id } = req.body;
+  const { req_friend_name, rec_friend_name } = req.body;
 
   try {
     // Update the friend request to accepted
@@ -1219,7 +1219,7 @@ app.put("/friends/accept", async (req, res) => {
        SET pending = false
        WHERE req_friend = $1 AND rec_friend = $2
        RETURNING relation_id, req_friend, rec_friend, pending`,
-      [req_friend_id, rec_friend_id]
+      [req_friend_name, rec_friend_name]
     );
 
     if (result.rowCount === 0) {
@@ -1314,10 +1314,6 @@ app.get("/friends/:username", async (req, res) => {
       [username]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "No friends found" });
-    }
-
     res.json(result.rows);
   } catch (err) {
     console.error("Error fetching friends list:", err.message, err.stack);
@@ -1338,10 +1334,6 @@ app.get("/friends/requests/:username", async (req, res) => {
       [username]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "No incoming friend requests found" });
-    }
-
     res.json(result.rows);
   } catch (err) {
     console.error("Error fetching incoming friend requests:", err.message, err.stack);
@@ -1361,10 +1353,6 @@ app.get("/friends/outgoing/:username", async (req, res) => {
        WHERE f.req_friend = $1 AND f.pending = true`,
       [username]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "No outgoing friend requests found" });
-    }
 
     res.json(result.rows);
   } catch (err) {

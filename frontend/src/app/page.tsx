@@ -37,7 +37,7 @@ export default function Home() {
       case 3:
         return <div>Predict</div>;
       case 4:
-        return <FriendsTab loginStatus={loginStatus} userId={userId.toString()} />;
+        return <FriendsTab loginStatus={loginStatus} userId={userId} username={username} />;
       default:
         return null;
     }

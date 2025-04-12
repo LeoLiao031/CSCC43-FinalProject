@@ -193,20 +193,20 @@ export const getStockListStatistics = async (listId: string, userId: string) => 
 };
 
 // Friends Management
-export const sendFriendRequest = async (reqFriendId: string, recFriendId: string) => {
+export const sendFriendRequest = async (reqFriendName: string, recFriendName: string) => {
   const response = await fetch(`${API_BASE_URL}/friends`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ req_friend_id: reqFriendId, rec_friend_id: recFriendId }),
+    body: JSON.stringify({ req_friend_name: reqFriendName, rec_friend_name: recFriendName }),
   });
   return response.json();
 };
 
-export const acceptFriendRequest = async (reqFriendId: string, recFriendId: string) => {
+export const acceptFriendRequest = async (reqFriendName: string, recFriendName: string) => {
   const response = await fetch(`${API_BASE_URL}/friends/accept`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ req_friend_id: reqFriendId, rec_friend_id: recFriendId }),
+    body: JSON.stringify({ req_friend_name: reqFriendName, rec_friend_name: recFriendName }),
   });
   return response.json();
 };
@@ -220,7 +220,7 @@ export const removeFriend = async (reqFriendId: string, recFriendId: string) => 
   return response.json();
 };
 
-export const searchFriends = async (query: string, userId: string) => {
+export const searchFriends = async (query: string, userId: number) => {
   const response = await fetch(`${API_BASE_URL}/friends/search/${query}/${userId}`);
   return response.json();
 };
@@ -234,23 +234,23 @@ export const withdrawFriendRequest = async (reqFriendId: string, recFriendId: st
   return response.json();
 };
 
-export const getFriendsList = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/${userId}`);
+export const getFriendsList = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/${username}`);
   return response.json();
 };
 
-export const getIncomingFriendRequests = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/requests/${userId}`);
+export const getIncomingFriendRequests = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/requests/${username}`);
   return response.json();
 };
 
-export const getOutgoingFriendRequests = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/outgoing/${userId}`);
+export const getOutgoingFriendRequests = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/outgoing/${username}`);
   return response.json();
 };
 
-export const getNonFriendsList = async (userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/friends/non-friends/${userId}`);
+export const getNonFriendsList = async (username: string) => {
+  const response = await fetch(`${API_BASE_URL}/friends/non-friends/${username}`);
   return response.json();
 };
 
