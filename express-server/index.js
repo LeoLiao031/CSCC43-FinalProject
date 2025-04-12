@@ -1568,7 +1568,7 @@ app.get("/friends/non-friends/:username", async (req, res) => {
 // -- Stock List Review management --
 
 // Get all reviews for a stock list
-app.get("/api/review/list/:list_id", async (req, res) => {
+app.get("/review/list/:list_id", async (req, res) => {
   const { list_id } = req.params;
   const { user_id } = req.query;
 
@@ -1605,7 +1605,7 @@ app.get("/api/review/list/:list_id", async (req, res) => {
 });
 
 // Create a review for a stock list
-app.post("/api/review/:list_id", async (req, res) => {
+app.post("/review/:list_id", async (req, res) => {
   const { list_id } = req.params;
   const { user_id, content } = req.body;
 
@@ -1655,7 +1655,7 @@ app.post("/api/review/:list_id", async (req, res) => {
 });
 
 // Edit a review for a stock list
-app.put("/api/review/:review_id", async (req, res) => {
+app.put("/review/:review_id", async (req, res) => {
   const { review_id } = req.params;
   const { user_id, content } = req.body;
 
@@ -1692,7 +1692,7 @@ app.put("/api/review/:review_id", async (req, res) => {
 });
 
 // Delete a review for a stock list
-app.delete("/api/review/:review_id", async (req, res) => {
+app.delete("/review/:review_id", async (req, res) => {
   const { review_id } = req.params;
   const { user_id } = req.body;
 
@@ -1723,8 +1723,6 @@ app.delete("/api/review/:review_id", async (req, res) => {
     res.status(500).json({ error: "Failed to delete review" });
   }
 });
-
-
 
 const PORT = 4000;
 app.listen(PORT, () => {
