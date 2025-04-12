@@ -776,6 +776,43 @@ app.post("/stocks", async (req, res) => {
   }
 });
 
+// Get stock history entries between a start date and end date *
+app.get("/stockhistory", async (req, res) => {
+  const { start_date, end_date, stock_symbol } = req.query;
+
+  try {
+    // Validate that start_date and end_date are provided
+    if (!start_date || !end_date) {
+      return res.status(400).json({ error: "start_date and end_date are required" });
+    }
+
+    // Base query to fetch stock history
+    let query = `
+      SELECT *
+      FROM StockHistory
+      WHERE timestamp BETWEEN $1 AND $2
+    `;
+    const params = [start_date, end_date];
+
+    // Add filtering by stock_symbol if provided
+    if (stock_symbol) {
+      query += ` AND stock_symbol = $3`;
+      params.push(stock_symbol);
+    }
+
+    query += ` ORDER BY timestamp ASC`; // Order results by timestamp
+
+    // Execute the query
+    const result = await pool.query(query, params);
+
+    // Return the results
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching stock history:", err.message, err.stack);
+    res.status(500).json({ error: "Failed to fetch stock history" });
+  }
+});
+
 // Get stock data *
 app.get("/stocks/:stock_symbol", async (req, res) => {
   const { stock_symbol } = req.params;
