@@ -20,3 +20,11 @@ npm run dev
 ```
 npm start
 ```
+
+
+# Table Creation
+```
+- Run the files in express-server/db_population in the order they are numbered
+- Insert historical data and stock ticker mapping using these files
+    - https://drive.google.com/drive/folders/1ZrfYs2JyshlDC8vj0XcsExCSw93vyMlE?usp=drive_link
+```
